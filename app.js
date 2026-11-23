@@ -61,7 +61,7 @@ const I18N = {
     strokeThin: "Thin",
     strokeMedium: "Medium",
     strokeThick: "Thick",
-    markHint: "Drag on the photo to draw",
+    markHint: "Drag on the photo to draw. Curve a dashed line to make an arc.",
     undoMark: "Undo",
     clearMarks: "Clear marks",
     rotatePhoto: "Rotate 90°",
@@ -156,7 +156,7 @@ const I18N = {
     strokeThin: "細",
     strokeMedium: "中",
     strokeThick: "粗",
-    markHint: "喺相片上拖曳即可畫",
+    markHint: "喺相片上拖曳即可畫。虛線可以拉成弧型。",
     undoMark: "復原",
     clearMarks: "清除標註",
     rotatePhoto: "旋轉 90°",
@@ -843,7 +843,12 @@ function marksForPhoto(tree, pid) {
 function rotateMarksCW(marks) {
   return (marks || []).map((m) => {
     if (m.type === "arrow" || m.type === "dash") {
-      return Object.assign({}, m, { x1: 1 - m.y1, y1: m.x1, x2: 1 - m.y2, y2: m.x2 });
+      const next = Object.assign({}, m, { x1: 1 - m.y1, y1: m.x1, x2: 1 - m.y2, y2: m.x2 });
+      if (m.mx != null && m.my != null) {
+        next.mx = 1 - m.my;
+        next.my = m.mx;
+      }
+      return next;
     }
     if (m.type === "circle") {
       return Object.assign({}, m, { cx: 1 - m.cy, cy: m.cx });
@@ -895,13 +900,69 @@ function paintArrow(ctx, x1, y1, x2, y2, mark, minEdge) {
   ctx.fill();
 }
 
-function paintDash(ctx, x1, y1, x2, y2, mark, minEdge) {
+function circleThrough3(x1, y1, x2, y2, x3, y3) {
+  const d = 2 * (x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2));
+  if (Math.abs(d) < 1e-6) return null;
+  const t1 = x1 * x1 + y1 * y1;
+  const t2 = x2 * x2 + y2 * y2;
+  const t3 = x3 * x3 + y3 * y3;
+  const cx = (t1 * (y2 - y3) + t2 * (y3 - y1) + t3 * (y1 - y2)) / d;
+  const cy = (t1 * (x3 - x2) + t2 * (x1 - x3) + t3 * (x2 - x1)) / d;
+  const r = Math.hypot(x1 - cx, y1 - cy);
+  if (!isFinite(cx) || !isFinite(cy) || !isFinite(r) || r < 1) return null;
+  return { cx, cy, r };
+}
+
+function farthestFromChord(points, w, h) {
+  if (!points || points.length < 3) return null;
+  const a = points[0];
+  const b = points[points.length - 1];
+  const ax = a.x * w, ay = a.y * h, bx = b.x * w, by = b.y * h;
+  const vx = bx - ax, vy = by - ay;
+  const len2 = vx * vx + vy * vy;
+  if (len2 < 1) return null;
+  let best = null;
+  let bestD = 0;
+  for (let i = 1; i < points.length - 1; i++) {
+    const px = points[i].x * w, py = points[i].y * h;
+    const t = ((px - ax) * vx + (py - ay) * vy) / len2;
+    const qx = ax + t * vx, qy = ay + t * vy;
+    const d = Math.hypot(px - qx, py - qy);
+    if (d > bestD) {
+      bestD = d;
+      best = points[i];
+    }
+  }
+  if (!best || bestD < 6) return null;
+  return best;
+}
+
+function paintDash(ctx, mark, w, h, minEdge) {
   applyMarkStroke(ctx, mark, minEdge);
   const dash = Math.max(8, minEdge * 0.02);
   ctx.setLineDash([dash, dash * 0.7]);
+  const x1 = mark.x1 * w, y1 = mark.y1 * h, x2 = mark.x2 * w, y2 = mark.y2 * h;
+  const mid = (mark.mx != null && mark.my != null) ? { x: mark.mx, y: mark.my } : farthestFromChord(mark.points, w, h);
   ctx.beginPath();
-  ctx.moveTo(x1, y1);
-  ctx.lineTo(x2, y2);
+  if (mid) {
+    const mx = mid.x * w, my = mid.y * h;
+    const circ = circleThrough3(x1, y1, mx, my, x2, y2);
+    if (circ) {
+      const a1 = Math.atan2(y1 - circ.cy, x1 - circ.cx);
+      const am = Math.atan2(my - circ.cy, mx - circ.cx);
+      const a2 = Math.atan2(y2 - circ.cy, x2 - circ.cx);
+      const tau = Math.PI * 2;
+      const ccwSpan = (a2 - a1 + tau) % tau;
+      const midSpan = (am - a1 + tau) % tau;
+      ctx.arc(circ.cx, circ.cy, circ.r, a1, a2, midSpan <= ccwSpan);
+    } else {
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+    }
+  } else {
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+  }
   ctx.stroke();
   ctx.setLineDash([]);
 }
@@ -921,7 +982,7 @@ function drawMarks(ctx, marks, w, h, draft) {
     if (m.type === "arrow") {
       paintArrow(ctx, m.x1 * w, m.y1 * h, m.x2 * w, m.y2 * h, m, minEdge);
     } else if (m.type === "dash") {
-      paintDash(ctx, m.x1 * w, m.y1 * h, m.x2 * w, m.y2 * h, m, minEdge);
+      paintDash(ctx, m, w, h, minEdge);
     } else if (m.type === "circle") {
       paintCircle(ctx, m.cx * w, m.cy * h, (m.r || 0) * minEdge, m, minEdge);
     }
@@ -1094,6 +1155,8 @@ function peOnPointerDown(ev) {
   const base = { color: pe.color, width: pe.width };
   if (pe.tool === "circle") {
     pe.draft = Object.assign({ type: "circle", cx: p.x, cy: p.y, r: 0 }, base);
+  } else if (pe.tool === "dash") {
+    pe.draft = Object.assign({ type: "dash", x1: p.x, y1: p.y, x2: p.x, y2: p.y, points: [{ x: p.x, y: p.y }] }, base);
   } else {
     pe.draft = Object.assign({ type: pe.tool, x1: p.x, y1: p.y, x2: p.x, y2: p.y }, base);
   }
@@ -1110,6 +1173,21 @@ function peOnPointerMove(ev) {
     const dx = (p.x - pe.draft.cx) * canvas.width;
     const dy = (p.y - pe.draft.cy) * canvas.height;
     pe.draft.r = Math.hypot(dx, dy) / minEdge;
+  } else if (pe.draft.type === "dash") {
+    pe.draft.x2 = p.x;
+    pe.draft.y2 = p.y;
+    const pts = pe.draft.points || (pe.draft.points = []);
+    const last = pts[pts.length - 1];
+    if (!last || Math.hypot(p.x - last.x, p.y - last.y) >= 0.004) pts.push({ x: p.x, y: p.y });
+    const canvas = peCanvas();
+    const mid = farthestFromChord(pts, canvas.width, canvas.height);
+    if (mid) {
+      pe.draft.mx = mid.x;
+      pe.draft.my = mid.y;
+    } else {
+      delete pe.draft.mx;
+      delete pe.draft.my;
+    }
   } else {
     pe.draft.x2 = p.x;
     pe.draft.y2 = p.y;
@@ -1125,6 +1203,18 @@ function peFinishDraft() {
   if (!d) return;
   if (d.type === "circle") {
     if ((d.r || 0) >= 0.012) pe.marks.push(d);
+  } else if (d.type === "dash") {
+    const canvas = peCanvas();
+    const len = Math.hypot((d.x2 - d.x1) * canvas.width, (d.y2 - d.y1) * canvas.height);
+    if (len >= 8) {
+      const mid = farthestFromChord(d.points, canvas.width, canvas.height);
+      const mark = { type: "dash", x1: d.x1, y1: d.y1, x2: d.x2, y2: d.y2, color: d.color, width: d.width };
+      if (mid) {
+        mark.mx = mid.x;
+        mark.my = mid.y;
+      }
+      pe.marks.push(mark);
+    }
   } else {
     const canvas = peCanvas();
     const len = Math.hypot((d.x2 - d.x1) * canvas.width, (d.y2 - d.y1) * canvas.height);

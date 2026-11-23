@@ -62,7 +62,7 @@ This repo is published at the URL above. You can also upload the folder to Netli
 
 ## Photos
 
-Tree photos are shown in a portrait (3:4) frame, matching the Word report. Landscape images are fitted into a portrait canvas when imported (content stays upright, with padding). Tap a photo to draw arrows, circles, or dashed lines; these marks are included in Word and HTML exports.
+Tree photos are shown in a portrait (3:4) frame, matching the Word report. Landscape images are fitted into a portrait canvas when imported (content stays upright, with padding). Tap a photo to draw arrows, circles, or dashed lines (straight or curved into an arc); these marks are included in Word and HTML exports.
 
 ## Export
 
