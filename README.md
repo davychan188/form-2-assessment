@@ -1,6 +1,10 @@
 # Form 2 Assessment
 
-A mobile-first, offline field app for Form 2 tree assessment records.
+現場 Form 2 樹木評估記錄（離線、手機優先）。
+
+使用：[https://davychan188.github.io/form-2-assessment/](https://davychan188.github.io/form-2-assessment/)
+
+本專案基於 [Hugoleung04/form-2-assessment](https://github.com/Hugoleung04/form-2-assessment)，在 `davychan188` 帳號下獨立維護。
 
 ## What it records
 
@@ -41,11 +45,11 @@ python3 serve.py
 
 Then on the phone, open the printed URL (example: `http://192.168.x.x:8080`).
 
-### Option B — put the folder on any static host
+### Option B — GitHub Pages or any static host
 
-Upload the whole `resistograph-field-app` folder to GitHub Pages, Netlify, Cloudflare Pages, or any HTTPS static host. Open the site on the phone and use **Add to Home Screen**.
+This repo is published at the URL above. You can also upload the folder to Netlify, Cloudflare Pages, or any HTTPS static host. Open the site on the phone and use **Add to Home Screen**.
 
-### iPhone notes
+### iPhone / iPad notes
 
 - Safari: Enable compass when prompted.
 - Add to Home Screen for full-screen use.
@@ -59,6 +63,7 @@ Upload the whole `resistograph-field-app` folder to GitHub Pages, Netlify, Cloud
 ## Export
 
 - **Export report** — single HTML file with photos embedded (open and print to PDF).
+- **Export Word** — DOCX report.
 - **Backup JSON** — full data + photos as data URLs.
 
 Records stay on the phone until you delete them.
