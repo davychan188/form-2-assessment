@@ -138,6 +138,35 @@
       <button class="btn danger" id="btnDeleteTree" type="button" style="margin-top:10px" data-i18n="delete">Delete</button>
     </section>
   </div>
+
+  <div class="photo-editor" id="photoEditor" hidden>
+    <div class="pe-toolbar">
+      <span class="pe-title" data-i18n="markPhoto">Mark photo</span>
+      <button class="btn secondary" type="button" id="peCancel" data-i18n="cancel">Cancel</button>
+      <button class="btn" type="button" id="peSave" data-i18n="saveMarks">Save</button>
+    </div>
+    <div class="pe-stage" id="peStage">
+      <canvas id="peCanvas"></canvas>
+    </div>
+    <div class="pe-tools">
+      <button class="tool active" type="button" data-pe-tool="arrow" data-i18n="toolArrow">Arrow</button>
+      <button class="tool" type="button" data-pe-tool="circle" data-i18n="toolCircle">Circle</button>
+      <button class="tool" type="button" data-pe-tool="dash" data-i18n="toolDash">Dashed line</button>
+      <div class="pe-colors" id="peColors"></div>
+      <div class="pe-widths">
+        <button class="tool" type="button" data-pe-width="thin" data-i18n="strokeThin">Thin</button>
+        <button class="tool active" type="button" data-pe-width="medium" data-i18n="strokeMedium">Medium</button>
+        <button class="tool" type="button" data-pe-width="thick" data-i18n="strokeThick">Thick</button>
+      </div>
+      <span class="pe-hint" data-i18n="markHint">Drag on the photo to draw</span>
+    </div>
+    <div class="pe-footer">
+      <button class="btn secondary" type="button" id="peUndo" data-i18n="undoMark">Undo</button>
+      <button class="btn secondary" type="button" id="peClear" data-i18n="clearMarks">Clear marks</button>
+      <button class="btn secondary" type="button" id="peRotate" data-i18n="rotatePhoto">Rotate 90°</button>
+      <button class="btn danger" type="button" id="peDelete" data-i18n="delete">Delete</button>
+    </div>
+  </div>
   <div class="toast" id="toast"></div>
   <script src="./jszip.min.js"></script>
   <script src="./template-b64.js"></script>

@@ -54,6 +54,19 @@ const I18N = {
     need2photos: "Take 2 photos for this drilling",
     need1treePhoto: "Add at least 1 tree photo before export",
     photoCaption: "Caption (optional)",
+    markPhoto: "Mark photo",
+    toolArrow: "Arrow",
+    toolCircle: "Circle",
+    toolDash: "Dashed line",
+    strokeThin: "Thin",
+    strokeMedium: "Medium",
+    strokeThick: "Thick",
+    markHint: "Drag on the photo to draw",
+    undoMark: "Undo",
+    clearMarks: "Clear marks",
+    rotatePhoto: "Rotate 90°",
+    saveMarks: "Save",
+    cancel: "Cancel",
     movePrev: "Move earlier",
     moveNext: "Move later",
     stampOn: "Date/time stamp: ON",
@@ -136,6 +149,19 @@ const I18N = {
     need2photos: "此鑽孔需要 2 張照片",
     need1treePhoto: "匯出前請至少加入 1 張樹木照片",
     photoCaption: "說明（可留空）",
+    markPhoto: "標註相片",
+    toolArrow: "箭咀",
+    toolCircle: "圓圈",
+    toolDash: "虛線",
+    strokeThin: "細",
+    strokeMedium: "中",
+    strokeThick: "粗",
+    markHint: "喺相片上拖曳即可畫",
+    undoMark: "復原",
+    clearMarks: "清除標註",
+    rotatePhoto: "旋轉 90°",
+    saveMarks: "儲存",
+    cancel: "取消",
     movePrev: "往前移",
     moveNext: "往後移",
     stampOn: "日期時間戳：開",
@@ -714,25 +740,8 @@ async function loadImageSource(file) {
   return loadImageViaElement(file);
 }
 
-async function fileToJpegBlob(file, maxEdge = 1920, quality = 0.88) {
-  const img = await loadImageSource(file);
-  let w = img.width || img.naturalWidth;
-  let h = img.height || img.naturalHeight;
-  if (!w || !h) throw new Error("invalid image size");
-  const scale = Math.min(1, maxEdge / Math.max(w, h));
-  w = Math.max(1, Math.round(w * scale));
-  h = Math.max(1, Math.round(h * scale));
-  const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("no canvas context");
-  ctx.drawImage(img, 0, 0, w, h);
-  if (stampEnabled()) drawPhotoStamp(ctx, w, h, photoStampText(new Date()));
-  if (typeof img.close === "function") {
-    try { img.close(); } catch (e) {}
-  }
-  const blob = await new Promise((resolve, reject) => {
+function canvasToJpegBlob(canvas, quality = 0.88) {
+  return new Promise((resolve, reject) => {
     if (canvas.toBlob) {
       canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob failed"))), "image/jpeg", quality);
     } else {
@@ -747,7 +756,460 @@ async function fileToJpegBlob(file, maxEdge = 1920, quality = 0.88) {
       }
     }
   });
+}
+
+async function drawImageToPortraitCanvas(img, maxEdge = 1920, quality = 0.88, stamp = false) {
+  const srcW = img.width || img.naturalWidth;
+  const srcH = img.height || img.naturalHeight;
+  if (!srcW || !srcH) throw new Error("invalid image size");
+  let canvasW;
+  let canvasH;
+  if (srcW / srcH > 3 / 4) {
+    canvasH = Math.max(srcH, Math.round(srcW * 4 / 3));
+    canvasW = Math.round(canvasH * 3 / 4);
+  } else {
+    canvasW = srcW;
+    canvasH = srcH;
+  }
+  const scale = Math.min(1, maxEdge / Math.max(canvasW, canvasH));
+  canvasW = Math.max(1, Math.round(canvasW * scale));
+  canvasH = Math.max(1, Math.round(canvasH * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = canvasW;
+  canvas.height = canvasH;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("no canvas context");
+  ctx.fillStyle = "#0a140f";
+  ctx.fillRect(0, 0, canvasW, canvasH);
+  const fit = Math.min(canvasW / srcW, canvasH / srcH);
+  const dw = Math.max(1, Math.round(srcW * fit));
+  const dh = Math.max(1, Math.round(srcH * fit));
+  const dx = Math.round((canvasW - dw) / 2);
+  const dy = Math.round((canvasH - dh) / 2);
+  ctx.drawImage(img, dx, dy, dw, dh);
+  if (stamp) drawPhotoStamp(ctx, canvasW, canvasH, photoStampText(new Date()));
+  return canvasToJpegBlob(canvas, quality);
+}
+
+async function fileToJpegBlob(file, maxEdge = 1920, quality = 0.88, opts = {}) {
+  const img = await loadImageSource(file);
+  let blob;
+  if (opts.forcePortrait) {
+    blob = await drawImageToPortraitCanvas(img, maxEdge, quality, stampEnabled());
+  } else {
+    const srcW = img.width || img.naturalWidth;
+    const srcH = img.height || img.naturalHeight;
+    if (!srcW || !srcH) throw new Error("invalid image size");
+    const scale = Math.min(1, maxEdge / Math.max(srcW, srcH));
+    const w = Math.max(1, Math.round(srcW * scale));
+    const h = Math.max(1, Math.round(srcH * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("no canvas context");
+    ctx.drawImage(img, 0, 0, w, h);
+    if (stampEnabled()) drawPhotoStamp(ctx, w, h, photoStampText(new Date()));
+    blob = await canvasToJpegBlob(canvas, quality);
+  }
+  if (typeof img.close === "function") {
+    try { img.close(); } catch (e) {}
+  }
   return blob;
+}
+
+async function ensurePortraitBlob(blob, maxEdge = 1920, quality = 0.88) {
+  const img = await loadImageSource(blob);
+  const w = img.width || img.naturalWidth;
+  const h = img.height || img.naturalHeight;
+  if (w && h && w / h <= 3 / 4) {
+    if (typeof img.close === "function") {
+      try { img.close(); } catch (e) {}
+    }
+    return blob;
+  }
+  const out = await drawImageToPortraitCanvas(img, maxEdge, quality, false);
+  if (typeof img.close === "function") {
+    try { img.close(); } catch (e) {}
+  }
+  return out;
+}
+
+function marksForPhoto(tree, pid) {
+  if (!tree || !tree.treePhotoMarks) return [];
+  return Array.isArray(tree.treePhotoMarks[pid]) ? tree.treePhotoMarks[pid] : [];
+}
+
+function rotateMarksCW(marks) {
+  return (marks || []).map((m) => {
+    if (m.type === "arrow" || m.type === "dash") {
+      return Object.assign({}, m, { x1: 1 - m.y1, y1: m.x1, x2: 1 - m.y2, y2: m.x2 });
+    }
+    if (m.type === "circle") {
+      return Object.assign({}, m, { cx: 1 - m.cy, cy: m.cx });
+    }
+    return m;
+  });
+}
+
+async function rotateBlobCW(blob) {
+  const img = await loadImageSource(blob);
+  const w = img.width || img.naturalWidth;
+  const h = img.height || img.naturalHeight;
+  const canvas = document.createElement("canvas");
+  canvas.width = h;
+  canvas.height = w;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("no canvas context");
+  ctx.translate(h, 0);
+  ctx.rotate(Math.PI / 2);
+  ctx.drawImage(img, 0, 0, w, h);
+  if (typeof img.close === "function") {
+    try { img.close(); } catch (e) {}
+  }
+  return canvasToJpegBlob(canvas);
+}
+
+function applyMarkStroke(ctx, mark, minEdge) {
+  ctx.strokeStyle = mark.color || "#e63935";
+  ctx.fillStyle = mark.color || "#e63935";
+  ctx.lineWidth = Math.max(2, (mark.width || 0.009) * minEdge);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+}
+
+function paintArrow(ctx, x1, y1, x2, y2, mark, minEdge) {
+  applyMarkStroke(ctx, mark, minEdge);
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  const head = Math.max(12, minEdge * 0.035);
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - head * Math.cos(angle - Math.PI / 6), y2 - head * Math.sin(angle - Math.PI / 6));
+  ctx.lineTo(x2 - head * Math.cos(angle + Math.PI / 6), y2 - head * Math.sin(angle + Math.PI / 6));
+  ctx.closePath();
+  ctx.fill();
+}
+
+function paintDash(ctx, x1, y1, x2, y2, mark, minEdge) {
+  applyMarkStroke(ctx, mark, minEdge);
+  const dash = Math.max(8, minEdge * 0.02);
+  ctx.setLineDash([dash, dash * 0.7]);
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function paintCircle(ctx, cx, cy, r, mark, minEdge) {
+  applyMarkStroke(ctx, mark, minEdge);
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
+function drawMarks(ctx, marks, w, h, draft) {
+  const minEdge = Math.min(w, h);
+  const all = (marks || []).concat(draft ? [draft] : []);
+  for (const m of all) {
+    if (m.type === "arrow") {
+      paintArrow(ctx, m.x1 * w, m.y1 * h, m.x2 * w, m.y2 * h, m, minEdge);
+    } else if (m.type === "dash") {
+      paintDash(ctx, m.x1 * w, m.y1 * h, m.x2 * w, m.y2 * h, m, minEdge);
+    } else if (m.type === "circle") {
+      paintCircle(ctx, m.cx * w, m.cy * h, (m.r || 0) * minEdge, m, minEdge);
+    }
+  }
+}
+
+async function blobWithMarks(blob, marks) {
+  if (!blob) return blob;
+  if (!marks || !marks.length) return blob;
+  const img = await loadImageSource(blob);
+  const w = img.width || img.naturalWidth;
+  const h = img.height || img.naturalHeight;
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("no canvas context");
+  ctx.drawImage(img, 0, 0, w, h);
+  drawMarks(ctx, marks, w, h);
+  if (typeof img.close === "function") {
+    try { img.close(); } catch (e) {}
+  }
+  return canvasToJpegBlob(canvas);
+}
+
+async function photoDisplayUrl(tree, pid) {
+  const rec = await getPhoto(pid);
+  if (!rec || !rec.blob) return "";
+  const blob = await blobWithMarks(rec.blob, marksForPhoto(tree, pid));
+  return URL.createObjectURL(blob);
+}
+
+async function exportSizedPhoto(tree, pid) {
+  const rec = await getPhoto(pid);
+  if (!rec || !rec.blob) return null;
+  const marked = await blobWithMarks(rec.blob, marksForPhoto(tree, pid));
+  const blob = await ensurePortraitBlob(marked);
+  const sized = await blobToBytesAndSize(blob);
+  return {
+    bytes: sized.bytes,
+    w: sized.w,
+    h: sized.h,
+    caption: (tree.treePhotoCaptions && tree.treePhotoCaptions[pid]) || "",
+  };
+}
+
+const PE_COLORS = ["#e63935", "#ffd60a", "#ffffff", "#111111"];
+const PE_WIDTHS = { thin: 0.005, medium: 0.009, thick: 0.016 };
+
+const pe = {
+  open: false,
+  photoId: null,
+  marks: [],
+  workingBlob: null,
+  image: null,
+  tool: "arrow",
+  color: "#e63935",
+  width: 0.009,
+  draft: null,
+  drawing: false,
+};
+
+function peCanvas() {
+  return document.getElementById("peCanvas");
+}
+
+function peNormFromEvent(ev) {
+  const canvas = peCanvas();
+  const rect = canvas.getBoundingClientRect();
+  if (!rect.width || !rect.height) return { x: 0, y: 0 };
+  const x = (ev.clientX - rect.left) / rect.width;
+  const y = (ev.clientY - rect.top) / rect.height;
+  return { x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) };
+}
+
+function peRedraw() {
+  const canvas = peCanvas();
+  if (!canvas || !pe.image) return;
+  const w = canvas.width;
+  const h = canvas.height;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, w, h);
+  ctx.drawImage(pe.image, 0, 0, w, h);
+  drawMarks(ctx, pe.marks, w, h, pe.draft);
+}
+
+function peSetTool(tool) {
+  pe.tool = tool;
+  document.querySelectorAll("[data-pe-tool]").forEach((btn) => {
+    btn.classList.toggle("active", btn.getAttribute("data-pe-tool") === tool);
+  });
+}
+
+function peSetWidth(name) {
+  pe.width = PE_WIDTHS[name] || PE_WIDTHS.medium;
+  document.querySelectorAll("[data-pe-width]").forEach((btn) => {
+    btn.classList.toggle("active", btn.getAttribute("data-pe-width") === name);
+  });
+}
+
+function peRenderColors() {
+  const box = document.getElementById("peColors");
+  if (!box) return;
+  box.innerHTML = PE_COLORS.map((c) =>
+    `<button type="button" class="pe-swatch${c === pe.color ? " active" : ""}" data-pe-color="${c}" style="background:${c}" aria-label="${c}"></button>`
+  ).join("");
+  box.querySelectorAll("[data-pe-color]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      pe.color = btn.getAttribute("data-pe-color");
+      peRenderColors();
+    });
+  });
+}
+
+async function peLoadImage(blob) {
+  if (pe.image && typeof pe.image.close === "function") {
+    try { pe.image.close(); } catch (e) {}
+  }
+  const img = await loadImageSource(blob);
+  pe.image = img;
+  const canvas = peCanvas();
+  canvas.width = img.width || img.naturalWidth;
+  canvas.height = img.height || img.naturalHeight;
+  peRedraw();
+}
+
+async function openPhotoEditor(photoId) {
+  const tree = await getTree(currentTreeId);
+  const rec = await getPhoto(photoId);
+  if (!tree || !rec || !rec.blob) return;
+  pe.open = true;
+  pe.photoId = photoId;
+  pe.marks = marksForPhoto(tree, photoId).map((m) => Object.assign({}, m));
+  pe.workingBlob = rec.blob;
+  pe.draft = null;
+  pe.drawing = false;
+  pe.tool = "arrow";
+  pe.color = "#e63935";
+  pe.width = PE_WIDTHS.medium;
+  document.getElementById("photoEditor").hidden = false;
+  document.body.classList.add("pe-open");
+  peSetTool("arrow");
+  peSetWidth("medium");
+  peRenderColors();
+  applyI18n();
+  await peLoadImage(pe.workingBlob);
+}
+
+function closePhotoEditor() {
+  pe.open = false;
+  pe.photoId = null;
+  pe.marks = [];
+  pe.workingBlob = null;
+  pe.draft = null;
+  pe.drawing = false;
+  if (pe.image && typeof pe.image.close === "function") {
+    try { pe.image.close(); } catch (e) {}
+  }
+  pe.image = null;
+  document.getElementById("photoEditor").hidden = true;
+  document.body.classList.remove("pe-open");
+}
+
+function peOnPointerDown(ev) {
+  if (!pe.open || ev.button != null && ev.button !== 0) return;
+  ev.preventDefault();
+  peCanvas().setPointerCapture(ev.pointerId);
+  pe.drawing = true;
+  const p = peNormFromEvent(ev);
+  const base = { color: pe.color, width: pe.width };
+  if (pe.tool === "circle") {
+    pe.draft = Object.assign({ type: "circle", cx: p.x, cy: p.y, r: 0 }, base);
+  } else {
+    pe.draft = Object.assign({ type: pe.tool, x1: p.x, y1: p.y, x2: p.x, y2: p.y }, base);
+  }
+  peRedraw();
+}
+
+function peOnPointerMove(ev) {
+  if (!pe.drawing || !pe.draft) return;
+  ev.preventDefault();
+  const p = peNormFromEvent(ev);
+  if (pe.draft.type === "circle") {
+    const canvas = peCanvas();
+    const minEdge = Math.min(canvas.width, canvas.height);
+    const dx = (p.x - pe.draft.cx) * canvas.width;
+    const dy = (p.y - pe.draft.cy) * canvas.height;
+    pe.draft.r = Math.hypot(dx, dy) / minEdge;
+  } else {
+    pe.draft.x2 = p.x;
+    pe.draft.y2 = p.y;
+  }
+  peRedraw();
+}
+
+function peFinishDraft() {
+  if (!pe.drawing) return;
+  pe.drawing = false;
+  const d = pe.draft;
+  pe.draft = null;
+  if (!d) return;
+  if (d.type === "circle") {
+    if ((d.r || 0) >= 0.012) pe.marks.push(d);
+  } else {
+    const canvas = peCanvas();
+    const len = Math.hypot((d.x2 - d.x1) * canvas.width, (d.y2 - d.y1) * canvas.height);
+    if (len >= 8) pe.marks.push(d);
+  }
+  peRedraw();
+}
+
+async function peSave() {
+  if (!pe.open || !pe.photoId || !currentTreeId) return;
+  const tree = await getTree(currentTreeId);
+  if (!tree) return;
+  await putPhoto(pe.photoId, pe.workingBlob);
+  tree.treePhotoMarks = tree.treePhotoMarks || {};
+  tree.treePhotoMarks[pe.photoId] = pe.marks.slice();
+  tree.updatedAt = Date.now();
+  await putTree(tree);
+  closePhotoEditor();
+  toast(t("saved"));
+  await renderTreePhotos(tree);
+}
+
+async function peCancel() {
+  closePhotoEditor();
+}
+
+async function peUndo() {
+  if (pe.marks.length) pe.marks.pop();
+  pe.draft = null;
+  peRedraw();
+}
+
+async function peClearMarks() {
+  if (!pe.marks.length) return;
+  if (!confirm(t("clearMarks") + "?")) return;
+  pe.marks = [];
+  pe.draft = null;
+  peRedraw();
+}
+
+async function peRotate() {
+  if (!pe.workingBlob) return;
+  pe.workingBlob = await rotateBlobCW(pe.workingBlob);
+  pe.marks = rotateMarksCW(pe.marks);
+  pe.draft = null;
+  await peLoadImage(pe.workingBlob);
+}
+
+async function peDeletePhoto() {
+  if (!pe.photoId || !currentTreeId) return;
+  if (!confirm(t("delete") + "?")) return;
+  const tree = await getTree(currentTreeId);
+  const pid = pe.photoId;
+  if (!tree) return;
+  tree.treePhotoIds = (tree.treePhotoIds || []).filter((x) => x !== pid);
+  if (tree.treePhotoCaptions) delete tree.treePhotoCaptions[pid];
+  if (tree.treePhotoMarks) delete tree.treePhotoMarks[pid];
+  await deletePhoto(pid);
+  tree.updatedAt = Date.now();
+  await putTree(tree);
+  closePhotoEditor();
+  toast(t("deleted"));
+  await renderTreePhotos(tree);
+}
+
+function wirePhotoEditor() {
+  const canvas = peCanvas();
+  if (!canvas || canvas.dataset.wired) return;
+  canvas.dataset.wired = "1";
+  canvas.addEventListener("pointerdown", peOnPointerDown);
+  canvas.addEventListener("pointermove", peOnPointerMove);
+  canvas.addEventListener("pointerup", peFinishDraft);
+  canvas.addEventListener("pointercancel", peFinishDraft);
+  document.querySelectorAll("[data-pe-tool]").forEach((btn) => {
+    btn.addEventListener("click", () => peSetTool(btn.getAttribute("data-pe-tool")));
+  });
+  document.querySelectorAll("[data-pe-width]").forEach((btn) => {
+    btn.addEventListener("click", () => peSetWidth(btn.getAttribute("data-pe-width")));
+  });
+  document.getElementById("peSave").addEventListener("click", peSave);
+  document.getElementById("peCancel").addEventListener("click", peCancel);
+  document.getElementById("peUndo").addEventListener("click", peUndo);
+  document.getElementById("peClear").addEventListener("click", peClearMarks);
+  document.getElementById("peRotate").addEventListener("click", peRotate);
+  document.getElementById("peDelete").addEventListener("click", peDeletePhoto);
 }
 
 async function photoUrl(id) {
@@ -1142,27 +1604,41 @@ async function renderTreePhotos(tree) {
     const pid = ids[i];
     const slot = document.createElement("div");
     slot.className = "photo-slot";
-    const url = await photoUrl(pid);
+    const url = await photoDisplayUrl(tree, pid);
     const cap = tree.treePhotoCaptions[pid] || "";
     slot.innerHTML = `
       <div class="photo-tools">
         <span class="order">#${i + 1}</span>
+        <button type="button" class="mini" data-act="edit">${t("markPhoto")}</button>
         <button type="button" class="mini" data-act="prev" ${i === 0 ? "disabled" : ""}>${t("movePrev")}</button>
         <button type="button" class="mini" data-act="next" ${i === ids.length - 1 ? "disabled" : ""}>${t("moveNext")}</button>
+        <button type="button" class="mini danger" data-act="del">${t("delete")}</button>
       </div>
-      <img src="${url}" alt="">
+      <div class="photo-frame">
+        <img src="${url}" alt="">
+      </div>
       <input class="caption-input" type="text" maxlength="120" placeholder="${escapeHtml(t("photoCaption"))}" value="${escapeHtml(cap)}">
       <div class="chip-box" data-cap-chips ${captionOptionsVisible ? "" : "hidden"}></div>`;
     const img = slot.querySelector("img");
     const input = slot.querySelector("input");
-    img.addEventListener("click", async () => {
+    const openEdit = (e) => {
+      e.stopPropagation();
+      openPhotoEditor(pid);
+    };
+    img.addEventListener("click", openEdit);
+    slot.querySelector('[data-act="edit"]').addEventListener("click", openEdit);
+    slot.querySelector('[data-act="del"]').addEventListener("click", async (e) => {
+      e.stopPropagation();
       if (!confirm(t("delete") + "?")) return;
-      tree.treePhotoIds = tree.treePhotoIds.filter((x) => x !== pid);
-      if (tree.treePhotoCaptions) delete tree.treePhotoCaptions[pid];
+      const latest = await getTree(currentTreeId);
+      if (!latest) return;
+      latest.treePhotoIds = (latest.treePhotoIds || []).filter((x) => x !== pid);
+      if (latest.treePhotoCaptions) delete latest.treePhotoCaptions[pid];
+      if (latest.treePhotoMarks) delete latest.treePhotoMarks[pid];
       await deletePhoto(pid);
-      tree.updatedAt = Date.now();
-      await putTree(tree);
-      await renderTreePhotos(tree);
+      latest.updatedAt = Date.now();
+      await putTree(latest);
+      await renderTreePhotos(latest);
     });
     slot.querySelector('[data-act="prev"]').addEventListener("click", (e) => {
       e.stopPropagation();
@@ -1341,7 +1817,7 @@ async function handleTreePhoto(file) {
   try {
     await saveTreeFields();
     const tree = await getTree(currentTreeId);
-    const blob = await fileToJpegBlob(file);
+    const blob = await fileToJpegBlob(file, 1920, 0.88, { forcePortrait: true });
     const id = uid();
     await putPhoto(id, blob);
     tree.treePhotoIds = tree.treePhotoIds || [];
@@ -1465,20 +1941,11 @@ async function exportReport() {
   }
   try {
     toast(t("export") + "…");
-    const firstTree = await getPhoto(tree.treePhotoIds[0]);
-    const treePhoto = firstTree && firstTree.blob ? await blobToBytesAndSize(firstTree.blob) : null;
+    const treePhoto = await exportSizedPhoto(tree, tree.treePhotoIds[0]);
     const treePhotos = [];
     for (const pid of tree.treePhotoIds || []) {
-      const rec = await getPhoto(pid);
-      if (rec && rec.blob) {
-        const sized = await blobToBytesAndSize(rec.blob);
-        treePhotos.push({
-          bytes: sized.bytes,
-          w: sized.w,
-          h: sized.h,
-          caption: (tree.treePhotoCaptions && tree.treePhotoCaptions[pid]) || "",
-        });
-      }
+      const sized = await exportSizedPhoto(tree, pid);
+      if (sized) treePhotos.push(sized);
     }
     await window.exportFilledDocx({
       treeId,
@@ -1509,7 +1976,10 @@ async function exportReportHtmlLegacy() {
   const treeImgs = [];
   for (const pid of tree.treePhotoIds) {
     const rec = await getPhoto(pid);
-    if (rec) treeImgs.push(await blobToDataUrl(rec.blob));
+    if (rec) {
+      const blob = await blobWithMarks(rec.blob, marksForPhoto(tree, pid));
+      treeImgs.push(await blobToDataUrl(blob));
+    }
   }
   const drillBlocks = [];
   for (let i = 0; i < (tree.drills || []).length; i++) {
@@ -1682,20 +2152,11 @@ async function exportSelectedWord() {
   const files = [];
   for (const tree of trees) {
     if (!tree.treePhotoIds || !tree.treePhotoIds.length) continue;
-    const first = await getPhoto(tree.treePhotoIds[0]);
-    const treePhoto = first && first.blob ? await blobToBytesAndSize(first.blob) : null;
+    const treePhoto = await exportSizedPhoto(tree, tree.treePhotoIds[0]);
     const treePhotos = [];
     for (const pid of tree.treePhotoIds || []) {
-      const rec = await getPhoto(pid);
-      if (rec && rec.blob) {
-        const sized = await blobToBytesAndSize(rec.blob);
-        treePhotos.push({
-          bytes: sized.bytes,
-          w: sized.w,
-          h: sized.h,
-          caption: (tree.treePhotoCaptions && tree.treePhotoCaptions[pid]) || "",
-        });
-      }
+      const sized = await exportSizedPhoto(tree, pid);
+      if (sized) treePhotos.push(sized);
     }
     const result = await window.exportFilledDocx({
       treeId: tree.treeId || "",
@@ -1882,6 +2343,7 @@ async function init() {
     btn.addEventListener("click", toggleStamp);
   });
   updateStampButtons();
+  wirePhotoEditor();
 
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("./sw.js").catch(() => {});
