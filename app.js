@@ -62,7 +62,8 @@ const I18N = {
     strokeMedium: "Medium",
     strokeThick: "Thick",
     markHint: "Drag on the photo to draw. Curve a dashed line to make an arc.",
-    arcLengthHint: "Drag the ends to change arc length, or the middle to change the curve.",
+    arcLengthHint: "Drag the mark to move it. Drag the ends to change arc length, or the middle to change the curve.",
+    moveMarkHint: "Drag the mark to move it.",
     undoMark: "Undo",
     clearMarks: "Clear marks",
     rotatePhoto: "Rotate 90°",
@@ -158,7 +159,8 @@ const I18N = {
     strokeMedium: "中",
     strokeThick: "粗",
     markHint: "喺相片上拖曳即可畫。虛線可以拉成弧型。",
-    arcLengthHint: "拖兩端可以改弧長，拖中間可以改彎度。",
+    arcLengthHint: "拉住標示就可以移動。拖兩端可以改弧長，拖中間可以改彎度。",
+    moveMarkHint: "拉住標示就可以移動。",
     undoMark: "復原",
     clearMarks: "清除標註",
     rotatePhoto: "旋轉 90°",
@@ -1097,24 +1099,80 @@ function adjustDashEnd(mark, which, p, w, h) {
   setDashMidToArcCenter(mark, geom, w, h);
 }
 
-function peDashHandles(mark, w, h) {
-  const list = [
-    { name: "start", px: mark.x1 * w, py: mark.y1 * h },
-    { name: "end", px: mark.x2 * w, py: mark.y2 * h },
-  ];
-  if (mark.mx != null && mark.my != null) {
-    list.splice(1, 0, { name: "mid", px: mark.mx * w, py: mark.my * h });
-  } else {
-    list.splice(1, 0, { name: "mid", px: ((mark.x1 + mark.x2) / 2) * w, py: ((mark.y1 + mark.y2) / 2) * h });
+function peMarkHandles(mark, w, h) {
+  if (!mark) return [];
+  if (mark.type === "dash") {
+    const list = [
+      { name: "start", px: mark.x1 * w, py: mark.y1 * h },
+      { name: "end", px: mark.x2 * w, py: mark.y2 * h },
+    ];
+    if (mark.mx != null && mark.my != null) {
+      list.splice(1, 0, { name: "mid", px: mark.mx * w, py: mark.my * h });
+    } else {
+      list.splice(1, 0, { name: "mid", px: ((mark.x1 + mark.x2) / 2) * w, py: ((mark.y1 + mark.y2) / 2) * h });
+    }
+    return list;
   }
-  return list;
+  if (mark.type === "arrow") {
+    return [
+      { name: "start", px: mark.x1 * w, py: mark.y1 * h },
+      { name: "end", px: mark.x2 * w, py: mark.y2 * h },
+    ];
+  }
+  if (mark.type === "circle") {
+    const minEdge = Math.min(w, h);
+    const r = (mark.r || 0) * minEdge;
+    const ang = pe.radiusAng || 0;
+    return [{ name: "radius", px: mark.cx * w + r * Math.cos(ang), py: mark.cy * h + r * Math.sin(ang) }];
+  }
+  return [];
+}
+
+function translateMark(mark, dx, dy) {
+  if (!mark || (!dx && !dy)) return;
+  const pts = [];
+  if (mark.type === "circle") {
+    pts.push({ x: mark.cx, y: mark.cy });
+  } else {
+    pts.push({ x: mark.x1, y: mark.y1 }, { x: mark.x2, y: mark.y2 });
+    if (mark.mx != null && mark.my != null) pts.push({ x: mark.mx, y: mark.my });
+  }
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const p of pts) {
+    minX = Math.min(minX, p.x);
+    maxX = Math.max(maxX, p.x);
+    minY = Math.min(minY, p.y);
+    maxY = Math.max(maxY, p.y);
+  }
+  if (minX + dx < 0) dx = -minX;
+  if (maxX + dx > 1) dx = 1 - maxX;
+  if (minY + dy < 0) dy = -minY;
+  if (maxY + dy > 1) dy = 1 - maxY;
+  if (!dx && !dy) return;
+  if (mark.type === "circle") {
+    mark.cx += dx;
+    mark.cy += dy;
+    return;
+  }
+  mark.x1 += dx;
+  mark.y1 += dy;
+  mark.x2 += dx;
+  mark.y2 += dy;
+  if (mark.mx != null) mark.mx += dx;
+  if (mark.my != null) mark.my += dy;
+  if (mark.points) {
+    for (const p of mark.points) {
+      p.x += dx;
+      p.y += dy;
+    }
+  }
 }
 
 function peDrawHandles(ctx, mark, w, h) {
   const r = Math.max(10, Math.min(w, h) * 0.014);
   ctx.save();
   ctx.setLineDash([]);
-  for (const hnd of peDashHandles(mark, w, h)) {
+  for (const hnd of peMarkHandles(mark, w, h)) {
     ctx.beginPath();
     ctx.fillStyle = hnd.name === "mid" ? "#ffd60a" : "#ffffff";
     ctx.strokeStyle = "#111111";
@@ -1130,7 +1188,7 @@ function peHitHandle(pt, mark, w, h) {
   const hit = Math.max(28, Math.min(w, h) * 0.035);
   let best = null;
   let bestD = hit;
-  for (const hnd of peDashHandles(mark, w, h)) {
+  for (const hnd of peMarkHandles(mark, w, h)) {
     const d = Math.hypot(pt.x - hnd.px, pt.y - hnd.py);
     if (d <= bestD) {
       bestD = d;
@@ -1166,14 +1224,30 @@ function distToDashMark(mark, pt, w, h) {
   return Math.hypot(pt.x - (ax + t * vx), pt.y - (ay + t * vy));
 }
 
-function peHitDash(pt, w, h) {
+function distToSegment(px, py, ax, ay, bx, by) {
+  const vx = bx - ax, vy = by - ay;
+  const len2 = vx * vx + vy * vy;
+  if (len2 < 1) return Math.hypot(px - ax, py - ay);
+  const t = Math.max(0, Math.min(1, ((px - ax) * vx + (py - ay) * vy) / len2));
+  return Math.hypot(px - (ax + t * vx), py - (ay + t * vy));
+}
+
+function distToMark(mark, pt, w, h) {
+  if (mark.type === "dash") return distToDashMark(mark, pt, w, h);
+  if (mark.type === "arrow") return distToSegment(pt.x, pt.y, mark.x1 * w, mark.y1 * h, mark.x2 * w, mark.y2 * h);
+  if (mark.type === "circle") {
+    const r = (mark.r || 0) * Math.min(w, h);
+    return Math.abs(Math.hypot(pt.x - mark.cx * w, pt.y - mark.cy * h) - r);
+  }
+  return Infinity;
+}
+
+function peHitMark(pt, w, h) {
   const thresh = Math.max(22, Math.min(w, h) * 0.03);
   let best = -1;
   let bestD = thresh;
   for (let i = pe.marks.length - 1; i >= 0; i--) {
-    const m = pe.marks[i];
-    if (m.type !== "dash") continue;
-    const d = distToDashMark(m, pt, w, h);
+    const d = distToMark(pe.marks[i], pt, w, h);
     if (d <= bestD) {
       bestD = d;
       best = i;
@@ -1187,9 +1261,12 @@ function peSetHint(key) {
   if (el) el.textContent = t(key);
 }
 
-function peSelectDash(index) {
+function peSelectMark(index) {
   pe.selected = index;
-  peSetHint(index >= 0 ? "arcLengthHint" : "markHint");
+  const mark = pe.marks[index];
+  if (!mark) peSetHint("markHint");
+  else if (mark.type === "dash") peSetHint("arcLengthHint");
+  else peSetHint("moveMarkHint");
 }
 
 function paintDash(ctx, mark, w, h, minEdge) {
@@ -1300,6 +1377,8 @@ const pe = {
   drawing: false,
   selected: -1,
   dragHandle: null,
+  lastP: null,
+  radiusAng: 0,
 };
 
 function peCanvas() {
@@ -1324,7 +1403,7 @@ function peRedraw() {
   ctx.clearRect(0, 0, w, h);
   ctx.drawImage(pe.image, 0, 0, w, h);
   drawMarks(ctx, pe.marks, w, h, pe.draft);
-  if (pe.selected >= 0 && pe.marks[pe.selected] && pe.marks[pe.selected].type === "dash") {
+  if (pe.selected >= 0 && pe.marks[pe.selected]) {
     peDrawHandles(ctx, pe.marks[pe.selected], w, h);
   }
 }
@@ -1381,6 +1460,7 @@ async function openPhotoEditor(photoId) {
   pe.drawing = false;
   pe.selected = -1;
   pe.dragHandle = null;
+  pe.lastP = null;
   pe.tool = "arrow";
   pe.color = "#e63935";
   pe.width = PE_WIDTHS.medium;
@@ -1402,6 +1482,7 @@ function closePhotoEditor() {
   pe.drawing = false;
   pe.selected = -1;
   pe.dragHandle = null;
+  pe.lastP = null;
   if (pe.image && typeof pe.image.close === "function") {
     try { pe.image.close(); } catch (e) {}
   }
@@ -1428,27 +1509,31 @@ function peOnPointerDown(ev) {
   const w = canvas.width, h = canvas.height;
   const pt = peEventCanvasPoint(ev);
   const p = peNormFromEvent(ev);
-  if (pe.selected >= 0 && pe.marks[pe.selected] && pe.marks[pe.selected].type === "dash") {
+  if (pe.selected >= 0 && pe.marks[pe.selected]) {
     const handle = peHitHandle(pt, pe.marks[pe.selected], w, h);
     if (handle) {
       pe.dragHandle = handle;
+      pe.lastP = p;
       pe.drawing = false;
       pe.draft = null;
       peRedraw();
       return;
     }
   }
-  const hit = peHitDash(pt, w, h);
+  const hit = peHitMark(pt, w, h);
   if (hit >= 0) {
-    peSelectDash(hit);
+    peSelectMark(hit);
     const handle = peHitHandle(pt, pe.marks[hit], w, h);
-    pe.dragHandle = handle;
+    pe.dragHandle = handle || "move";
+    pe.lastP = p;
     pe.drawing = false;
     pe.draft = null;
     peRedraw();
     return;
   }
-  peSelectDash(-1);
+  peSelectMark(-1);
+  pe.dragHandle = null;
+  pe.lastP = null;
   pe.drawing = true;
   const base = { color: pe.color, width: pe.width };
   if (pe.tool === "circle") {
@@ -1462,17 +1547,30 @@ function peOnPointerDown(ev) {
 }
 
 function peOnPointerMove(ev) {
-  if (pe.dragHandle && pe.selected >= 0 && pe.marks[pe.selected] && pe.marks[pe.selected].type === "dash") {
+  if (pe.dragHandle && pe.selected >= 0 && pe.marks[pe.selected]) {
     ev.preventDefault();
     const canvas = peCanvas();
     const w = canvas.width, h = canvas.height;
     const p = peNormFromEvent(ev);
     const mark = pe.marks[pe.selected];
-    if (pe.dragHandle === "mid") {
-      mark.mx = p.x;
-      mark.my = p.y;
-    } else {
-      adjustDashEnd(mark, pe.dragHandle, p, w, h);
+    if (pe.dragHandle === "move") {
+      const from = pe.lastP || p;
+      translateMark(mark, p.x - from.x, p.y - from.y);
+      pe.lastP = p;
+    } else if (pe.dragHandle === "radius" && mark.type === "circle") {
+      const minEdge = Math.min(w, h);
+      pe.radiusAng = Math.atan2(p.y * h - mark.cy * h, p.x * w - mark.cx * w);
+      mark.r = Math.max(0.012, Math.hypot((p.x - mark.cx) * w, (p.y - mark.cy) * h) / minEdge);
+    } else if (mark.type === "dash") {
+      if (pe.dragHandle === "mid") {
+        mark.mx = p.x;
+        mark.my = p.y;
+      } else {
+        adjustDashEnd(mark, pe.dragHandle, p, w, h);
+      }
+    } else if (mark.type === "arrow") {
+      if (pe.dragHandle === "start") { mark.x1 = p.x; mark.y1 = p.y; }
+      else if (pe.dragHandle === "end") { mark.x2 = p.x; mark.y2 = p.y; }
     }
     peRedraw();
     return;
@@ -1511,6 +1609,7 @@ function peOnPointerMove(ev) {
 function peOnPointerUp() {
   if (pe.dragHandle) {
     pe.dragHandle = null;
+    pe.lastP = null;
     peRedraw();
     return;
   }
@@ -1524,7 +1623,10 @@ function peFinishDraft() {
   pe.draft = null;
   if (!d) return;
   if (d.type === "circle") {
-    if ((d.r || 0) >= 0.012) pe.marks.push(d);
+    if ((d.r || 0) >= 0.012) {
+      pe.marks.push(d);
+      peSelectMark(pe.marks.length - 1);
+    }
   } else if (d.type === "dash") {
     const canvas = peCanvas();
     const len = Math.hypot((d.x2 - d.x1) * canvas.width, (d.y2 - d.y1) * canvas.height);
@@ -1536,12 +1638,15 @@ function peFinishDraft() {
         mark.my = mid.y;
       }
       pe.marks.push(mark);
-      peSelectDash(pe.marks.length - 1);
+      peSelectMark(pe.marks.length - 1);
     }
   } else {
     const canvas = peCanvas();
     const len = Math.hypot((d.x2 - d.x1) * canvas.width, (d.y2 - d.y1) * canvas.height);
-    if (len >= 8) pe.marks.push(d);
+    if (len >= 8) {
+      pe.marks.push(d);
+      peSelectMark(pe.marks.length - 1);
+    }
   }
   peRedraw();
 }
@@ -1568,7 +1673,8 @@ async function peUndo() {
   if (pe.marks.length) pe.marks.pop();
   pe.draft = null;
   pe.dragHandle = null;
-  peSelectDash(pe.marks.length && pe.marks[pe.marks.length - 1].type === "dash" ? pe.marks.length - 1 : -1);
+  pe.lastP = null;
+  peSelectMark(pe.marks.length ? pe.marks.length - 1 : -1);
   peRedraw();
 }
 
@@ -1578,7 +1684,8 @@ async function peClearMarks() {
   pe.marks = [];
   pe.draft = null;
   pe.dragHandle = null;
-  peSelectDash(-1);
+  pe.lastP = null;
+  peSelectMark(-1);
   peRedraw();
 }
 
