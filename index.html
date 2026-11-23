@@ -107,6 +107,8 @@
           <input id="f-recommendation" autocomplete="off" placeholder="or type your own">
           <div class="chip-box" id="recChips" hidden></div>
         </div>
+        <div class="field">
+          <label data-i18n="notes">Notes</label>
           <textarea id="f-notes"></textarea>
         </div>
         <div class="field">
@@ -115,7 +117,7 @@
             <button class="btn secondary" id="btnRefreshComments" type="button" style="width:auto;min-height:36px;padding:6px 10px;font-size:13px">Refresh from fields</button>
           </div>
           <textarea id="f-comments" rows="8" style="min-height:140px"></textarea>
-          <p class="help" style="margin-top:6px">“1” = site, “2” = nearby, “3” = targets. You can edit freely before export.</p>
+          <p class="help" style="margin-top:6px">“1” = site, “2” = nearby, “3” = targets, “4” = recommendation. You can edit freely before export.</p>
         </div>
         <div class="row spread" style="margin-bottom:10px">
           <span class="status-pill" id="gpsLabel">No GPS yet</span>
@@ -126,8 +128,8 @@
           <button class="btn secondary" id="btnToggleCaptionOptions" type="button" style="width:auto;min-height:32px;padding:4px 10px;font-size:13px">Show options</button>
         </div>
         <div class="photos" id="treePhotos"></div>
-        <input class="hidden-file" id="fileTreePhoto" type="file" accept="image/*" capture="environment">
-        <button class="btn ghost" id="btnTreePhoto" type="button" style="margin-top:10px" data-i18n="addTreePhoto">Take / add tree photo</button>
+        <input class="hidden-file" id="fileTreePhoto" type="file" accept="image/*" multiple>
+        <button class="btn ghost" id="btnTreePhoto" type="button" style="margin-top:10px" data-i18n="addTreePhoto">Take / add tree photos</button>
         <button class="btn secondary" type="button" style="margin-top:8px" data-stamp-toggle>Date/time stamp: OFF</button>
       </div>
 

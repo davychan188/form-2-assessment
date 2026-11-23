@@ -18,7 +18,7 @@ const I18N = {
     comments: "Assessment comments",
     notes: "Notes",
     treePhotos: "Tree photos (at least 1)",
-    addTreePhoto: "Take / add tree photo",
+    addTreePhoto: "Take / add tree photos",
     gps: "Capture GPS",
     gpsOff: "No GPS yet",
     saveTree: "Save tree & continue",
@@ -115,7 +115,7 @@ const I18N = {
     inspector: "檢查員",
     notes: "備註",
     treePhotos: "樹木照片（至少 1 張）",
-    addTreePhoto: "拍攝 / 加入樹木照片",
+    addTreePhoto: "拍攝 / 一次過加入樹木照片",
     gps: "擷取 GPS",
     gpsOff: "尚未有 GPS",
     saveTree: "儲存並繼續",
@@ -1853,7 +1853,7 @@ async function openTree(id) {
   document.getElementById("f-date").value = tree.date || "";
   document.getElementById("f-notes").value = tree.notes || "";
   document.getElementById("f-recommendation").value = tree.recommendation || "";
-  document.getElementById("f-comments").value = tree.comments || buildCommentsText(tree.treeId, tree.species, tree.site, tree.nearby, tree.targets);
+  document.getElementById("f-comments").value = tree.comments || buildCommentsText(tree.treeId, tree.species, tree.site, tree.nearby, tree.targets, tree.recommendation);
   document.getElementById("gpsLabel").textContent = tree.gps
     ? `${tree.gps.lat.toFixed(6)}, ${tree.gps.lng.toFixed(6)}`
     : t("gpsOff");
@@ -1980,6 +1980,7 @@ function renderChips(containerId, common, history, inputId) {
         const liveParts = live.split(/\s*,\s*|\s+and\s+/).map((p) => p.trim()).filter(Boolean);
         const custom = liveParts.filter((p) => !known.has(p.toLowerCase()));
         input.value = joinWithAnd([...custom, ...selected]);
+        if (inputId === "f-recommendation") applyRecommendationToComments(input.value);
         saveTreeFields();
       }
     });
@@ -2030,7 +2031,16 @@ function articleFor(name) {
   return /^[aeiou]/i.test(s) ? "an" : "a";
 }
 
-function buildCommentsText(treeId, species, site, nearby, targets) {
+function recommendationClosing(rec) {
+  const s = String(rec || "").trim();
+  if (!s || /^no mitigation measure is needed\.?$/i.test(s)) {
+    return "No mitigation measure is needed at current stage.";
+  }
+  const body = /[.!?]$/.test(s) ? s : `${s}.`;
+  return `The following is recommended: ${body}`;
+}
+
+function buildCommentsText(treeId, species, site, nearby, targets, recommendation) {
   const id = treeId || "—";
   const sp = formatSpeciesForComments(species) || "—";
   const art = articleFor(sp);
@@ -2040,15 +2050,31 @@ function buildCommentsText(treeId, species, site, nearby, targets) {
   return (
     `The inspected tree (${id}) is ${art} ${sp} situated in the landscape area at ${s}. The tree is next to ${n}, which is considered frequently used. The targets of the tree cover ${t}.\n\n` +
     `The overall health condition of the tree was normal at the time of inspection, as evidenced by typical color, size, and density of the foliage. Structurally, no significant defects were observed along the main trunk and branches.\n\n` +
-    `In conclusion, the overall health and structural condition of the tree are considered acceptable. No mitigation measure is needed at current stage.`
+    `In conclusion, the overall health and structural condition of the tree are considered acceptable. ${recommendationClosing(recommendation)}`
   );
+}
+
+function applyRecommendationToComments(recommendation) {
+  const el = document.getElementById("f-comments");
+  if (!el) return;
+  const text = el.value || "";
+  if (!text.trim()) {
+    const form = readTreeForm();
+    el.value = buildCommentsText(form.treeId, form.species, form.site, form.nearby, form.targets, recommendation);
+    return;
+  }
+  const parts = text.split(/\n\s*\n/);
+  const last = (parts[parts.length - 1] || "").trim();
+  if (!/^In conclusion,/i.test(last)) return;
+  parts[parts.length - 1] = `In conclusion, the overall health and structural condition of the tree are considered acceptable. ${recommendationClosing(recommendation)}`;
+  el.value = parts.join("\n\n");
 }
 
 function refreshCommentsFromFields() {
   const form = readTreeForm();
   const el = document.getElementById("f-comments");
   if (!el) return;
-  el.value = buildCommentsText(form.treeId, form.species, form.site, form.nearby, form.targets);
+  el.value = buildCommentsText(form.treeId, form.species, form.site, form.nearby, form.targets, form.recommendation);
 }
 
 function readTreeForm() {
@@ -2336,25 +2362,49 @@ async function deleteCurrentDrill() {
   await openTree(currentTreeId);
 }
 
-async function handleTreePhoto(file) {
-  if (!file) return;
-  try {
-    await saveTreeFields();
-    const tree = await getTree(currentTreeId);
-    const blob = await fileToJpegBlob(file, 1920, 0.88, { forcePortrait: true });
-    const id = uid();
-    await putPhoto(id, blob);
-    tree.treePhotoIds = tree.treePhotoIds || [];
-    tree.treePhotoIds.push(id);
-    tree.treePhotoCaptions = tree.treePhotoCaptions || {};
-    tree.treePhotoCaptions[id] = "";
-    tree.updatedAt = Date.now();
-    await putTree(tree);
-    await renderTreePhotos(tree);
-  } catch (err) {
-    console.error(err);
-    toast("Photo failed: " + (err && err.message ? err.message : "unknown"));
+function captionFromFileName(file) {
+  const raw = String((file && file.name) || "").trim();
+  if (!raw) return "";
+  let base = raw.replace(/^.*[/\\]/, "");
+  const dot = base.lastIndexOf(".");
+  if (dot > 0) base = base.slice(0, dot);
+  try { base = decodeURIComponent(base); } catch (e) {}
+  return base.replace(/\s+/g, " ").trim().slice(0, 120);
+}
+
+async function handleTreePhotos(files) {
+  const list = [...(files || [])].filter(Boolean);
+  if (!list.length) return;
+  await saveTreeFields();
+  const tree = await getTree(currentTreeId);
+  if (!tree) return;
+  tree.treePhotoIds = tree.treePhotoIds || [];
+  tree.treePhotoCaptions = tree.treePhotoCaptions || {};
+  let ok = 0;
+  let fail = 0;
+  for (const file of list) {
+    try {
+      const blob = await fileToJpegBlob(file, 1920, 0.88, { forcePortrait: true });
+      const id = uid();
+      await putPhoto(id, blob);
+      tree.treePhotoIds.push(id);
+      tree.treePhotoCaptions[id] = captionFromFileName(file);
+      ok++;
+    } catch (err) {
+      console.error(err);
+      fail++;
+    }
   }
+  tree.updatedAt = Date.now();
+  await putTree(tree);
+  await renderTreePhotos(tree);
+  if (fail && ok) toast(`Added ${ok} photo(s), ${fail} failed`);
+  else if (fail && !ok) toast("Photo failed");
+  else if (ok > 1) toast(`Added ${ok} photos`);
+}
+
+async function handleTreePhoto(file) {
+  return handleTreePhotos(file ? [file] : []);
 }
 
 async function handleDrillPhoto(slotIndex, file) {
@@ -2788,8 +2838,14 @@ async function init() {
   ["f-treeId", "f-species", "f-site", "f-nearby", "f-targets", "f-inspector", "f-date", "f-notes", "f-recommendation", "f-comments"].forEach((id) => {
     const el = document.getElementById(id);
     if (!el) return;
-    el.addEventListener("change", () => saveTreeFields());
-    el.addEventListener("blur", () => saveTreeFields());
+    el.addEventListener("change", () => {
+      if (id === "f-recommendation") applyRecommendationToComments(el.value);
+      saveTreeFields();
+    });
+    el.addEventListener("blur", () => {
+      if (id === "f-recommendation") applyRecommendationToComments(el.value);
+      saveTreeFields();
+    });
   });
   document.getElementById("btnJson").addEventListener("click", exportJson);
   const btnExportSelected = document.getElementById("btnExportSelected");
@@ -2847,9 +2903,9 @@ async function init() {
   });
 
   document.getElementById("fileTreePhoto").addEventListener("change", async (e) => {
-    const f = e.target.files && e.target.files[0];
+    const files = e.target.files ? [...e.target.files] : [];
     e.target.value = "";
-    if (f) await handleTreePhoto(f);
+    if (files.length) await handleTreePhotos(files);
   });
   document.getElementById("btnTreePhoto").addEventListener("click", () => document.getElementById("fileTreePhoto").click());
   const capToggleBtn = document.getElementById("btnToggleCaptionOptions");
