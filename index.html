@@ -75,7 +75,15 @@
         </div>
         <div class="field">
           <div class="row spread" style="align-items:center;margin-bottom:4px">
-            <label data-i18n="nearby" style="margin:0">Nearby environment (附近環境)</label>
+            <label data-i18n="locationType" style="margin:0">Location type</label>
+            <button class="btn secondary" type="button" data-chip-toggle="locTypeChips" style="width:auto;min-height:32px;padding:4px 10px;font-size:13px">Show options</button>
+          </div>
+          <input id="f-locationType" autocomplete="off" placeholder="or type your own">
+          <div class="chip-box" id="locTypeChips" hidden></div>
+        </div>
+        <div class="field">
+          <div class="row spread" style="align-items:center;margin-bottom:4px">
+            <label data-i18n="nearby" style="margin:0">Nearby environment</label>
             <button class="btn secondary" type="button" data-chip-toggle="nearbyChips" style="width:auto;min-height:32px;padding:4px 10px;font-size:13px">Show options</button>
           </div>
           <input id="f-nearby" autocomplete="off" placeholder="or type your own">
@@ -83,7 +91,7 @@
         </div>
         <div class="field">
           <div class="row spread" style="align-items:center;margin-bottom:4px">
-            <label data-i18n="targets" style="margin:0">Targets (目標)</label>
+            <label data-i18n="targets" style="margin:0">Target assessment</label>
             <button class="btn secondary" type="button" data-chip-toggle="targetsChips" style="width:auto;min-height:32px;padding:4px 10px;font-size:13px">Show options</button>
           </div>
           <input id="f-targets" autocomplete="off" placeholder="or type your own">
@@ -117,7 +125,7 @@
             <button class="btn secondary" id="btnRefreshComments" type="button" style="width:auto;min-height:36px;padding:6px 10px;font-size:13px">Refresh from fields</button>
           </div>
           <textarea id="f-comments" rows="8" style="min-height:140px"></textarea>
-          <p class="help" style="margin-top:6px">“1” = site, “2” = nearby, “3” = targets, “4” = recommendation. You can edit freely before export.</p>
+          <p class="help" style="margin-top:6px">“1” = site, “2” = location type, “3” = nearby, “4” = target assessment, “5” = recommendation. You can edit freely before export.</p>
         </div>
         <div class="row spread" style="margin-bottom:10px">
           <span class="status-pill" id="gpsLabel">No GPS yet</span>

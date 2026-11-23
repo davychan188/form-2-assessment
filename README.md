@@ -9,7 +9,7 @@
 ## What it records
 
 Each **tree inspection**
-- Tree ID / tag, species, site, inspector, date, notes
+- Tree ID / tag, species, site, location type, nearby environment, target assessment, inspector, date, notes
 - Optional GPS
 - At least 1 tree photo
 
@@ -61,6 +61,8 @@ This repo is published at the URL above. You can also upload the folder to Netli
 - Allow camera / location if you use GPS.
 
 ## Photos
+
+Location type and Target assessment have Show options lists taken from the official Form 2. The value written into the field (and comments or export) omits parenthetical text, so similar options such as the three People categories stay distinguishable with a short qualifier instead of parentheses.
 
 You can add several tree photos at once; each caption starts as the file name (without the extension). Tree photos are shown in a portrait (3:4) frame, matching the Word report. Landscape images are fitted into a portrait canvas when imported (content stays upright, with padding). Tap a photo to draw arrows, circles, or dashed lines (straight or curved into an arc). After drawing a mark, drag it to move it. For an arc, drag the end handles to change its length, or the middle handle to change the curve. These marks are included in Word and HTML exports. The date/time stamp is off by default; when turned on it uses the photo's capture time, not the import time.
 

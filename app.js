@@ -13,7 +13,8 @@ const I18N = {
     speciesNone: "No matching species",
     site: "Site / location",
     nearby: "Nearby environment",
-    targets: "Targets",
+    locationType: "Location type",
+    targets: "Target assessment",
     inspector: "Inspector",
     comments: "Assessment comments",
     notes: "Notes",
@@ -110,7 +111,8 @@ const I18N = {
     speciesNone: "沒有符合的樹種",
     site: "地點",
     nearby: "附近環境",
-    targets: "目標",
+    locationType: "地點類別",
+    targets: "目標物評估",
     comments: "評估意見",
     inspector: "檢查員",
     notes: "備註",
@@ -1823,6 +1825,7 @@ async function newTree() {
     treeId: "",
     species: "",
     site: "",
+    locationType: "",
     nearby: "",
     targets: "",
     inspector: localStorage.getItem("rf-inspector") || "",
@@ -1847,13 +1850,14 @@ async function openTree(id) {
   document.getElementById("f-treeId").value = tree.treeId || "";
   document.getElementById("f-species").value = tree.species || "";
   document.getElementById("f-site").value = tree.site || "";
+  document.getElementById("f-locationType").value = tree.locationType || "";
   document.getElementById("f-nearby").value = tree.nearby || "";
   document.getElementById("f-targets").value = tree.targets || "";
   document.getElementById("f-inspector").value = tree.inspector || "";
   document.getElementById("f-date").value = tree.date || "";
   document.getElementById("f-notes").value = tree.notes || "";
   document.getElementById("f-recommendation").value = tree.recommendation || "";
-  document.getElementById("f-comments").value = tree.comments || buildCommentsText(tree.treeId, tree.species, tree.site, tree.nearby, tree.targets, tree.recommendation);
+  document.getElementById("f-comments").value = tree.comments || buildCommentsText(tree.treeId, tree.species, tree.site, tree.nearby, tree.targets, tree.recommendation, tree.locationType);
   document.getElementById("gpsLabel").textContent = tree.gps
     ? `${tree.gps.lat.toFixed(6)}, ${tree.gps.lng.toFixed(6)}`
     : t("gpsOff");
@@ -1890,17 +1894,37 @@ const COMMON_NEARBY = [
   "open space",
 ];
 
-const COMMON_TARGETS = [
-  "pedestrians",
-  "vehicles",
-  "building",
-  "cyclists",
-  "park users",
-  "students",
-  "residents",
-  "passers-by",
-  "road users",
-  "property",
+const LOCATION_TYPE_OPTIONS = [
+  { value: "Roadside landscaped area", label: "Roadside landscaped area 路旁綠化地區" },
+  { value: "Tree pit/Tree ring", label: "Tree pit/Tree ring 樹穴/樹圈" },
+  { value: "Central divider", label: "Central divider 中央分隔帶" },
+  { value: "Public park or recreation venue", label: "Public park or recreation venue 公園或康樂場地" },
+  { value: "Housing estate", label: "Housing estate 屋邨" },
+  { value: "Government compound", label: "Government compound 政府建築物" },
+  { value: "Planter box", label: "Planter box 花盆" },
+  { value: "SIMAR slopes", label: "SIMAR slopes 系統性鑑辨維修責任的斜坡" },
+  { value: "Recreational site/facility inside country parks", label: "Recreational site/facility inside country parks 郊野公園內康樂用地或設施" },
+  { value: "Unleased or unallocated government land", label: "Unleased or unallocated government land 未批租或未撥用政府土地" },
+  { value: "Others", label: "Others 其他" },
+];
+
+const TARGET_ASSESSMENT_OPTIONS = [
+  { value: "People — residents, students, working staff, etc.", label: "People — residents, students, working staff, etc. 人" },
+  { value: "People — pedestrians, facility users, activity participants, etc.", label: "People — pedestrians, facility users, activity participants, etc. 人" },
+  { value: "People — vehicle drivers, bikers, etc.", label: "People — vehicle drivers, bikers, etc. 人" },
+  { value: "Buildings — residential, commercial, school, utility, covered carparks, etc.", label: "Buildings — residential, commercial, school, utility, covered carparks, etc. 建築物" },
+  { value: "Urban parks/sitting-out area/recreation site", label: "Urban parks/sitting-out area/recreation site 公園、休憩地點、康樂場地等" },
+  { value: "Countryside/rural/country parks recreational site/parks/sitting-out areas", label: "Countryside/rural/country parks recreational site/parks/sitting-out areas 郊外、鄉村、郊野公園活動地點等" },
+  { value: "Open carparks", label: "Open carparks 露天停車場" },
+  { value: "Open space — square, promenade, plaza, etc.", label: "Open space — square, promenade, plaza, etc. 公共空間" },
+  { value: "Hiking trails/rural footpaths", label: "Hiking trails/rural footpaths 遠足徑、鄉村小徑" },
+  { value: "Urban paths, pedestrian walkways, etc.", label: "Urban paths, pedestrian walkways, etc. 市區行人徑、步行路徑" },
+  { value: "Bus stops, tram stops, taxi stops, minibus stops, etc.", label: "Bus stops, tram stops, taxi stops, minibus stops, etc. 巴士站、電車站、的士站、小巴站等" },
+  { value: "Expressways", label: "Expressways 幹線公路" },
+  { value: "Busy public road — 4 lanes or above", label: "Busy public road — 4 lanes or above 繁忙道路" },
+  { value: "Moderate public road — 2 lanes", label: "Moderate public road — 2 lanes 中度繁忙道路" },
+  { value: "Minor public road/village road — 1 lane", label: "Minor public road/village road — 1 lane 疏落道路" },
+  { value: "Others", label: "Others 其他" },
 ];
 
 function loadHistory(key) {
@@ -1922,13 +1946,59 @@ function splitToSingles(value) {
     .filter((s) => !/^and\s/.test(s) && s !== "and");
 }
 
+function knownValuesForHistory(key) {
+  if (key === "f2-loctype-history") return LOCATION_TYPE_OPTIONS.map((o) => chipOption(o).value);
+  if (key === "f2-targets-history") return TARGET_ASSESSMENT_OPTIONS.map((o) => chipOption(o).value);
+  return [];
+}
+
+function splitFieldValues(value, known) {
+  let rest = String(value || "").trim();
+  const parts = [];
+  const knownList = [...(known || [])].filter(Boolean).sort((a, b) => b.length - a.length);
+  for (const k of knownList) {
+    const idx = rest.toLowerCase().indexOf(k.toLowerCase());
+    if (idx === -1) continue;
+    parts.push(k);
+    rest = (rest.slice(0, idx) + " " + rest.slice(idx + k.length)).replace(/\s+/g, " ").trim();
+  }
+  const custom = rest
+    .split(/\s*;\s*|\s*,\s*|\s+and\s+/i)
+    .map((s) => s.trim().replace(/^[;,.]+|[;,.]+$/g, "").replace(/^and\s+/i, "").trim())
+    .filter(Boolean)
+    .filter((s) => s.toLowerCase() !== "and");
+  return [...parts, ...custom];
+}
+
+function joinChipValues(items) {
+  const arr = items.map((s) => String(s || "").trim()).filter(Boolean);
+  if (!arr.length) return "";
+  if (arr.some((s) => /[,;]/.test(s))) return arr.join("; ");
+  return joinWithAnd(arr);
+}
+
 function saveHistory(key, value) {
-  const parts = splitToSingles(value);
+  const known = knownValuesForHistory(key);
+  const lowerCustom = key !== "f2-loctype-history" && key !== "f2-targets-history";
+  const parts = splitFieldValues(value, known)
+    .map((p) => {
+      const official = known.find((k) => k.toLowerCase() === p.toLowerCase());
+      if (official) return official;
+      return lowerCustom ? p.toLowerCase() : p;
+    })
+    .filter((p) => !known.some((k) => k.toLowerCase() === p.toLowerCase()));
   if (!parts.length) return;
-  const list = loadHistory(key).flatMap(splitToSingles);
-  const next = [...parts, ...list.filter((x) => !parts.includes(x))];
-  const uniq = [...new Set(next)].slice(0, 40);
-  localStorage.setItem(key, JSON.stringify(uniq));
+  const list = loadHistory(key).flatMap((v) => splitFieldValues(v, known));
+  const next = [...parts, ...list.filter((x) => !parts.some((p) => p.toLowerCase() === String(x).toLowerCase()))];
+  const uniq = [];
+  const seen = new Set();
+  for (const v of next) {
+    const keyv = String(v).toLowerCase();
+    if (!keyv || seen.has(keyv)) continue;
+    seen.add(keyv);
+    uniq.push(v);
+  }
+  localStorage.setItem(key, JSON.stringify(uniq.slice(0, 40)));
 }
 
 function fillDatalist(listId, values) {
@@ -1946,25 +2016,49 @@ function joinWithAnd(items) {
   return arr.slice(0, -1).join(", ") + ", and " + arr[arr.length - 1];
 }
 
+function stripParenText(s) {
+  return String(s || "")
+    .replace(/\s*[\(（][^)）]*[\)）]/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/\s+([,.;:])/g, "$1")
+    .trim();
+}
+
+function chipOption(opt) {
+  if (opt && typeof opt === "object") {
+    const value = stripParenText(opt.value || opt.label || "");
+    const label = stripParenText(opt.label || opt.value || "");
+    return { value, label: label || value };
+  }
+  const value = stripParenText(opt);
+  return { value, label: value };
+}
+
 function renderChips(containerId, common, history, inputId) {
   const box = document.getElementById(containerId);
   if (!box) return;
   const seen = new Set();
   const items = [];
-  for (const v of [...common, ...history]) {
-    const s = String(v || "").trim();
-    const key = s.toLowerCase();
+  const histVals = (history || []).map((h) => chipOption(h).value);
+  const commonVals = (common || []).map((c) => chipOption(c).value);
+  for (const raw of [...common, ...history]) {
+    const it = chipOption(raw);
+    const key = it.value.toLowerCase();
     if (!key || seen.has(key)) continue;
     seen.add(key);
-    items.push({ v: s, hist: history.includes(key) || history.includes(s) });
+    const fromHist = histVals.some((h) => h.toLowerCase() === key);
+    const fromCommon = commonVals.some((v) => v.toLowerCase() === key);
+    items.push({ v: it.value, label: it.label, hist: fromHist && !fromCommon });
   }
   const current = document.getElementById(inputId)?.value || "";
-  const currentParts = current.split(/\s*,\s*|\s+and\s+/).map((p) => p.trim()).filter(Boolean);
-  const known = new Set(items.map((it) => it.v.toLowerCase()));
+  const knownVals = items.map((it) => it.v);
+  const known = new Set(knownVals.map((v) => v.toLowerCase()));
+  const parsed = splitFieldValues(current, knownVals);
+  const currentSelected = new Set(parsed.filter((p) => known.has(p.toLowerCase())).map((p) => p.toLowerCase()));
   box.innerHTML = items
     .map((it) => {
-      const selected = currentParts.some((p) => p.toLowerCase() === it.v.toLowerCase());
-      return `<button type="button" class="chip${it.hist ? " chip-hist" : ""}${selected ? " selected" : ""}" data-val="${escapeHtml(it.v)}">${escapeHtml(it.v)}</button>`;
+      const selected = currentSelected.has(it.v.toLowerCase());
+      return `<button type="button" class="chip${it.hist ? " chip-hist" : ""}${selected ? " selected" : ""}" data-val="${escapeHtml(it.v)}">${escapeHtml(it.label)}</button>`;
     })
     .join("");
   box.querySelectorAll(".chip").forEach((btn) => {
@@ -1977,9 +2071,9 @@ function renderChips(containerId, common, history, inputId) {
       if (input) {
         // Re-read current value so typed content is not lost
         const live = input.value || "";
-        const liveParts = live.split(/\s*,\s*|\s+and\s+/).map((p) => p.trim()).filter(Boolean);
+        const liveParts = splitFieldValues(live, knownVals);
         const custom = liveParts.filter((p) => !known.has(p.toLowerCase()));
-        input.value = joinWithAnd([...custom, ...selected]);
+        input.value = joinChipValues([...custom, ...selected]);
         if (inputId === "f-recommendation") applyRecommendationToComments(input.value);
         saveTreeFields();
       }
@@ -1989,19 +2083,31 @@ function renderChips(containerId, common, history, inputId) {
 
 function refreshSuggestionLists() {
   // Clean any previously saved combined values into singles
-  ["f2-site-history", "f2-nearby-history", "f2-targets-history"].forEach((key) => {
+  ["f2-site-history", "f2-loctype-history", "f2-nearby-history", "f2-targets-history"].forEach((key) => {
     const raw = loadHistory(key);
-    const cleaned = [...new Set(raw.flatMap(splitToSingles))];
+    const known = knownValuesForHistory(key);
+    const cleaned = [];
+    const seen = new Set();
+    for (const part of raw.flatMap((v) => splitFieldValues(v, known))) {
+      const official = known.find((k) => k.toLowerCase() === part.toLowerCase());
+      if (official) continue;
+      const keyv = part.toLowerCase();
+      if (!keyv || seen.has(keyv)) continue;
+      seen.add(keyv);
+      cleaned.push(part);
+    }
     if (cleaned.length !== raw.length || cleaned.some((v, i) => v !== raw[i])) {
       localStorage.setItem(key, JSON.stringify(cleaned));
     }
   });
   const siteHist = loadHistory("f2-site-history");
+  const locTypeHist = loadHistory("f2-loctype-history");
   const nearbyHist = loadHistory("f2-nearby-history");
   const targetsHist = loadHistory("f2-targets-history");
   renderChips("siteChips", siteHist, [], "f-site");
+  renderChips("locTypeChips", LOCATION_TYPE_OPTIONS, locTypeHist, "f-locationType");
   renderChips("nearbyChips", COMMON_NEARBY, nearbyHist, "f-nearby");
-  renderChips("targetsChips", COMMON_TARGETS, targetsHist, "f-targets");
+  renderChips("targetsChips", TARGET_ASSESSMENT_OPTIONS, targetsHist, "f-targets");
   renderChips("recChips", RECOMMENDATION_OPTIONS, [], "f-recommendation");
 }
 
@@ -2031,6 +2137,24 @@ function articleFor(name) {
   return /^[aeiou]/i.test(s) ? "an" : "a";
 }
 
+function lowerFirst(s) {
+  const t = String(s || "").trim();
+  if (!t) return t;
+  return t.charAt(0).toLowerCase() + t.slice(1);
+}
+
+function placePhrase(site, locationType) {
+  const s = titleCase(site) || "—";
+  const raw = stripParenText(locationType || "");
+  // Use the first type when several are joined with "and"
+  const first = raw.split(/\s*,\s*|\s+and\s+/)[0] || "";
+  if (first && first.toLowerCase() !== "others") {
+    const rest = raw.toLowerCase() === first.toLowerCase() ? lowerFirst(first) : lowerFirst(raw);
+    return `${articleFor(first)} ${rest} at ${s}`;
+  }
+  return `the landscape area at ${s}`;
+}
+
 function recommendationClosing(rec) {
   const s = String(rec || "").trim();
   if (!s || /^no mitigation measure is needed\.?$/i.test(s)) {
@@ -2040,15 +2164,14 @@ function recommendationClosing(rec) {
   return `The following is recommended: ${body}`;
 }
 
-function buildCommentsText(treeId, species, site, nearby, targets, recommendation) {
+function buildCommentsText(treeId, species, site, nearby, targets, recommendation, locationType) {
   const id = treeId || "—";
   const sp = formatSpeciesForComments(species) || "—";
   const art = articleFor(sp);
-  const s = titleCase(site) || "—";
   const n = nearby || "—";
-  const t = targets || "—";
+  const t = stripParenText(targets) || "—";
   return (
-    `The inspected tree (${id}) is ${art} ${sp} situated in the landscape area at ${s}. The tree is next to ${n}, which is considered frequently used. The targets of the tree cover ${t}.\n\n` +
+    `The inspected tree (${id}) is ${art} ${sp} situated in ${placePhrase(site, locationType)}. The tree is next to ${n}, which is considered frequently used. The targets of the tree cover ${t}.\n\n` +
     `The overall health condition of the tree was normal at the time of inspection, as evidenced by typical color, size, and density of the foliage. Structurally, no significant defects were observed along the main trunk and branches.\n\n` +
     `In conclusion, the overall health and structural condition of the tree are considered acceptable. ${recommendationClosing(recommendation)}`
   );
@@ -2060,7 +2183,7 @@ function applyRecommendationToComments(recommendation) {
   const text = el.value || "";
   if (!text.trim()) {
     const form = readTreeForm();
-    el.value = buildCommentsText(form.treeId, form.species, form.site, form.nearby, form.targets, recommendation);
+    el.value = buildCommentsText(form.treeId, form.species, form.site, form.nearby, form.targets, recommendation, form.locationType);
     return;
   }
   const parts = text.split(/\n\s*\n/);
@@ -2074,7 +2197,7 @@ function refreshCommentsFromFields() {
   const form = readTreeForm();
   const el = document.getElementById("f-comments");
   if (!el) return;
-  el.value = buildCommentsText(form.treeId, form.species, form.site, form.nearby, form.targets, form.recommendation);
+  el.value = buildCommentsText(form.treeId, form.species, form.site, form.nearby, form.targets, form.recommendation, form.locationType);
 }
 
 function readTreeForm() {
@@ -2086,8 +2209,9 @@ function readTreeForm() {
     treeId: read("f-treeId").trim(),
     species: read("f-species").trim(),
     site: read("f-site").trim(),
+    locationType: stripParenText(read("f-locationType").trim()),
     nearby: read("f-nearby").trim().toLowerCase(),
-    targets: read("f-targets").trim().toLowerCase(),
+    targets: stripParenText(read("f-targets").trim()),
     inspector: read("f-inspector").trim(),
     date: read("f-date"),
     notes: read("f-notes").trim(),
@@ -2104,9 +2228,11 @@ async function saveTreeFields() {
   tree.treeId = form.treeId || tree.treeId || "";
   tree.species = form.species || tree.species || "";
   tree.site = form.site || tree.site || "";
+  tree.locationType = form.locationType || tree.locationType || "";
   tree.nearby = form.nearby || tree.nearby || "";
   tree.targets = form.targets || tree.targets || "";
   if (tree.site) saveHistory("f2-site-history", tree.site);
+  if (tree.locationType) saveHistory("f2-loctype-history", tree.locationType);
   if (tree.nearby) saveHistory("f2-nearby-history", tree.nearby);
   if (tree.targets) saveHistory("f2-targets-history", tree.targets);
   tree.inspector = form.inspector || tree.inspector || "";
@@ -2525,6 +2651,7 @@ async function exportReport() {
       treeId,
       species,
       location: form.site || tree.site || "",
+      locationType: form.locationType || tree.locationType || "",
       nearby: form.nearby || tree.nearby || "",
       targets: form.targets || tree.targets || "",
       recommendation: form.recommendation || tree.recommendation || "",
@@ -2582,7 +2709,8 @@ async function exportReportHtmlLegacy() {
 <h1>${escapeHtml(t("reportTitle"))}</h1>
 <div class="meta">
   <div><b>${t("treeId")}:</b> ${escapeHtml(tree.treeId || "—")} &nbsp; <b>${t("species")}:</b> ${escapeHtml(tree.species || "—")}</div>
-  <div><b>${t("site")}:</b> ${escapeHtml(tree.site || "—")} &nbsp; <b>${t("date")}:</b> ${escapeHtml(tree.date || "—")}</div>
+  <div><b>${t("site")}:</b> ${escapeHtml(tree.site || "—")} &nbsp; <b>${t("locationType")}:</b> ${escapeHtml(stripParenText(tree.locationType) || "—")} &nbsp; <b>${t("date")}:</b> ${escapeHtml(tree.date || "—")}</div>
+  <div><b>${t("targets")}:</b> ${escapeHtml(stripParenText(tree.targets) || "—")}</div>
   <div><b>${t("inspector")}:</b> ${escapeHtml(tree.inspector || "—")}
     ${tree.gps ? `&nbsp; <b>GPS:</b> ${tree.gps.lat.toFixed(6)}, ${tree.gps.lng.toFixed(6)}` : ""}
   </div>
@@ -2736,6 +2864,7 @@ async function exportSelectedWord() {
       treeId: tree.treeId || "",
       species: tree.species || "",
       location: tree.site || "",
+      locationType: tree.locationType || "",
       nearby: tree.nearby || "",
       targets: tree.targets || "",
       recommendation: tree.recommendation || "",
@@ -2835,7 +2964,7 @@ async function init() {
   document.getElementById("btnGps").addEventListener("click", captureGps);
   document.getElementById("btnDeleteTree").addEventListener("click", deleteCurrentTree);
   document.getElementById("btnExport").addEventListener("click", exportReport);
-  ["f-treeId", "f-species", "f-site", "f-nearby", "f-targets", "f-inspector", "f-date", "f-notes", "f-recommendation", "f-comments"].forEach((id) => {
+  ["f-treeId", "f-species", "f-site", "f-locationType", "f-nearby", "f-targets", "f-inspector", "f-date", "f-notes", "f-recommendation", "f-comments"].forEach((id) => {
     const el = document.getElementById(id);
     if (!el) return;
     el.addEventListener("change", () => {
@@ -2884,11 +3013,18 @@ async function init() {
       saveTreeFields();
     });
   }
-  ["f-nearby", "f-targets"].forEach((id) => {
+  ["f-nearby"].forEach((id) => {
     const el = document.getElementById(id);
     if (!el) return;
     el.addEventListener("blur", () => {
       el.value = el.value.trim().toLowerCase();
+    });
+  });
+  ["f-locationType", "f-targets"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener("blur", () => {
+      el.value = stripParenText(el.value);
     });
   });
   document.querySelectorAll("[data-chip-toggle]").forEach((btn) => {
