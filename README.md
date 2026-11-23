@@ -62,7 +62,7 @@ This repo is published at the URL above. You can also upload the folder to Netli
 
 ## Photos
 
-Tree photos are shown in a portrait (3:4) frame, matching the Word report. Landscape images are fitted into a portrait canvas when imported (content stays upright, with padding). Tap a photo to draw arrows, circles, or dashed lines (straight or curved into an arc); these marks are included in Word and HTML exports.
+Tree photos are shown in a portrait (3:4) frame, matching the Word report. Landscape images are fitted into a portrait canvas when imported (content stays upright, with padding). Tap a photo to draw arrows, circles, or dashed lines (straight or curved into an arc). After drawing an arc, drag the end handles to change its length, or the middle handle to change the curve. These marks are included in Word and HTML exports. The date/time stamp is off by default; when turned on it uses the photo's capture time, not the import time.
 
 ## Export
 

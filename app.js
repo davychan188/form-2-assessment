@@ -62,6 +62,7 @@ const I18N = {
     strokeMedium: "Medium",
     strokeThick: "Thick",
     markHint: "Drag on the photo to draw. Curve a dashed line to make an arc.",
+    arcLengthHint: "Drag the ends to change arc length, or the middle to change the curve.",
     undoMark: "Undo",
     clearMarks: "Clear marks",
     rotatePhoto: "Rotate 90°",
@@ -157,6 +158,7 @@ const I18N = {
     strokeMedium: "中",
     strokeThick: "粗",
     markHint: "喺相片上拖曳即可畫。虛線可以拉成弧型。",
+    arcLengthHint: "拖兩端可以改弧長，拖中間可以改彎度。",
     undoMark: "復原",
     clearMarks: "清除標註",
     rotatePhoto: "旋轉 90°",
@@ -679,7 +681,7 @@ function captureHeading() {
 /* ---------- Photos ---------- */
 
 function stampEnabled() {
-  return localStorage.getItem("rf-stamp") !== "0";
+  return localStorage.getItem("rf-stamp") === "1";
 }
 
 function updateStampButtons() {
@@ -696,6 +698,106 @@ function toggleStamp() {
 function photoStampText(d = new Date()) {
   const p = (n) => String(n).padStart(2, "0");
   return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())}  ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function asciiAt(view, offset, len) {
+  let s = "";
+  for (let i = 0; i < len && offset + i < view.byteLength; i++) {
+    const c = view.getUint8(offset + i);
+    if (c === 0) break;
+    s += String.fromCharCode(c);
+  }
+  return s;
+}
+
+function parseExifDateString(s) {
+  const m = String(s || "").trim().match(/^(\d{4})[:\-](\d{2})[:\-](\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (!m) return null;
+  const y = +m[1], mo = +m[2], d = +m[3], ho = +m[4], mi = +m[5], se = +(m[6] || 0);
+  if (y < 1980 || y > 2100 || mo < 1 || mo > 12 || d < 1 || d > 31 || ho > 23 || mi > 59) return null;
+  return new Date(y, mo - 1, d, ho, mi, se);
+}
+
+function parseTiffExif(view, tiffStart) {
+  if (tiffStart + 8 > view.byteLength) return null;
+  const endian = asciiAt(view, tiffStart, 2);
+  const le = endian === "II";
+  if (!le && endian !== "MM") return null;
+  const u16 = (o) => view.getUint16(o, le);
+  const u32 = (o) => view.getUint32(o, le);
+  if (u16(tiffStart + 2) !== 42) return null;
+
+  const readIfd = (ifdOffset, wantPtr) => {
+    const dates = {};
+    if (ifdOffset < tiffStart || ifdOffset + 2 > view.byteLength) return dates;
+    const n = u16(ifdOffset);
+    for (let i = 0; i < n; i++) {
+      const entry = ifdOffset + 2 + i * 12;
+      if (entry + 12 > view.byteLength) break;
+      const tag = u16(entry);
+      const type = u16(entry + 2);
+      const count = u32(entry + 4);
+      const valOff = entry + 8;
+      const typeSize = type === 2 ? 1 : type === 3 ? 2 : type === 4 ? 4 : 1;
+      let dataOff = valOff;
+      if (count * typeSize > 4) dataOff = tiffStart + u32(valOff);
+      if (tag === 0x8769 && wantPtr) dates.exifIfd = tiffStart + u32(valOff);
+      if (tag === 0x9003 || tag === 0x9004 || tag === 0x0132) {
+        const d = parseExifDateString(asciiAt(view, dataOff, Math.min(count, 32)));
+        if (!d) continue;
+        if (tag === 0x9003) dates.original = d;
+        else if (tag === 0x9004) dates.digitized = d;
+        else dates.modify = d;
+      }
+    }
+    return dates;
+  };
+
+  const d0 = readIfd(tiffStart + u32(tiffStart + 4), true);
+  const dE = d0.exifIfd ? readIfd(d0.exifIfd, false) : {};
+  return dE.original || dE.digitized || d0.original || d0.modify || null;
+}
+
+function scanAsciiDate(view) {
+  for (let i = 0; i < view.byteLength - 18; i++) {
+    const c0 = view.getUint8(i);
+    if (c0 < 0x31 || c0 > 0x32) continue;
+    const d = parseExifDateString(asciiAt(view, i, 19));
+    if (d) return d;
+  }
+  return null;
+}
+
+async function readPhotoTakenAt(file) {
+  if (!file) return null;
+  try {
+    const buf = await file.slice(0, Math.min(file.size, 512 * 1024)).arrayBuffer();
+    const view = new DataView(buf);
+    if (view.byteLength >= 2 && view.getUint16(0) === 0xFFD8) {
+      let offset = 2;
+      while (offset + 4 <= view.byteLength) {
+        if (view.getUint8(offset) !== 0xFF) break;
+        const marker = view.getUint8(offset + 1);
+        if (marker === 0xDA || marker === 0xD9) break;
+        const size = view.getUint16(offset + 2);
+        if (size < 2) break;
+        if (marker === 0xE1 && offset + 10 <= view.byteLength && asciiAt(view, offset + 4, 4) === "Exif") {
+          const d = parseTiffExif(view, offset + 10);
+          if (d) return d;
+        }
+        offset += 2 + size;
+      }
+    }
+    const scanned = scanAsciiDate(view);
+    if (scanned) return scanned;
+  } catch (e) {}
+  if (file.lastModified) return new Date(file.lastModified);
+  return null;
+}
+
+function stampTextForFile(file, takenAt) {
+  const d = takenAt || (file && file.lastModified ? new Date(file.lastModified) : null);
+  return d ? photoStampText(d) : "";
 }
 
 function drawPhotoStamp(ctx, w, h, text) {
@@ -758,7 +860,7 @@ function canvasToJpegBlob(canvas, quality = 0.88) {
   });
 }
 
-async function drawImageToPortraitCanvas(img, maxEdge = 1920, quality = 0.88, stamp = false) {
+async function drawImageToPortraitCanvas(img, maxEdge = 1920, quality = 0.88, stampText = "") {
   const srcW = img.width || img.naturalWidth;
   const srcH = img.height || img.naturalHeight;
   if (!srcW || !srcH) throw new Error("invalid image size");
@@ -787,15 +889,16 @@ async function drawImageToPortraitCanvas(img, maxEdge = 1920, quality = 0.88, st
   const dx = Math.round((canvasW - dw) / 2);
   const dy = Math.round((canvasH - dh) / 2);
   ctx.drawImage(img, dx, dy, dw, dh);
-  if (stamp) drawPhotoStamp(ctx, canvasW, canvasH, photoStampText(new Date()));
+  if (stampText) drawPhotoStamp(ctx, canvasW, canvasH, stampText);
   return canvasToJpegBlob(canvas, quality);
 }
 
 async function fileToJpegBlob(file, maxEdge = 1920, quality = 0.88, opts = {}) {
   const img = await loadImageSource(file);
+  const stampText = stampEnabled() ? stampTextForFile(file, await readPhotoTakenAt(file)) : "";
   let blob;
   if (opts.forcePortrait) {
-    blob = await drawImageToPortraitCanvas(img, maxEdge, quality, stampEnabled());
+    blob = await drawImageToPortraitCanvas(img, maxEdge, quality, stampText);
   } else {
     const srcW = img.width || img.naturalWidth;
     const srcH = img.height || img.naturalHeight;
@@ -809,7 +912,7 @@ async function fileToJpegBlob(file, maxEdge = 1920, quality = 0.88, opts = {}) {
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("no canvas context");
     ctx.drawImage(img, 0, 0, w, h);
-    if (stampEnabled()) drawPhotoStamp(ctx, w, h, photoStampText(new Date()));
+    if (stampText) drawPhotoStamp(ctx, w, h, stampText);
     blob = await canvasToJpegBlob(canvas, quality);
   }
   if (typeof img.close === "function") {
@@ -937,6 +1040,158 @@ function farthestFromChord(points, w, h) {
   return best;
 }
 
+function dashGeometry(mark, w, h) {
+  if (!mark || mark.mx == null || mark.my == null) return null;
+  const x1 = mark.x1 * w, y1 = mark.y1 * h, x2 = mark.x2 * w, y2 = mark.y2 * h;
+  const mx = mark.mx * w, my = mark.my * h;
+  const circ = circleThrough3(x1, y1, mx, my, x2, y2);
+  if (!circ) return null;
+  const a1 = Math.atan2(y1 - circ.cy, x1 - circ.cx);
+  const am = Math.atan2(my - circ.cy, mx - circ.cx);
+  const a2 = Math.atan2(y2 - circ.cy, x2 - circ.cx);
+  const tau = Math.PI * 2;
+  const ccw = (am - a1 + tau) % tau <= (a2 - a1 + tau) % tau;
+  return { cx: circ.cx, cy: circ.cy, r: circ.r, a1, am, a2, ccw };
+}
+
+function pointOnCircleNorm(geom, angle, w, h) {
+  return { x: (geom.cx + geom.r * Math.cos(angle)) / w, y: (geom.cy + geom.r * Math.sin(angle)) / h };
+}
+
+function midAngleOnArc(a1, a2, ccw) {
+  const tau = Math.PI * 2;
+  const span = ccw ? (a2 - a1 + tau) % tau : (a1 - a2 + tau) % tau;
+  return ccw ? a1 + span / 2 : a1 - span / 2;
+}
+
+function setDashMidToArcCenter(mark, geom, w, h) {
+  const mid = pointOnCircleNorm(geom, midAngleOnArc(geom.a1, geom.a2, geom.ccw), w, h);
+  mark.mx = mid.x;
+  mark.my = mid.y;
+}
+
+function adjustDashEnd(mark, which, p, w, h) {
+  const geom = dashGeometry(mark, w, h);
+  if (!geom) {
+    if (which === "start") { mark.x1 = p.x; mark.y1 = p.y; }
+    else { mark.x2 = p.x; mark.y2 = p.y; }
+    return;
+  }
+  const tau = Math.PI * 2;
+  const ang = Math.atan2(p.y * h - geom.cy, p.x * w - geom.cx);
+  if (which === "start") {
+    const span = geom.ccw ? (geom.a2 - ang + tau) % tau : (ang - geom.a2 + tau) % tau;
+    if (span * geom.r < 8 || span > tau - 0.08) return;
+    const pt = pointOnCircleNorm(geom, ang, w, h);
+    mark.x1 = pt.x;
+    mark.y1 = pt.y;
+    geom.a1 = ang;
+  } else {
+    const span = geom.ccw ? (ang - geom.a1 + tau) % tau : (geom.a1 - ang + tau) % tau;
+    if (span * geom.r < 8 || span > tau - 0.08) return;
+    const pt = pointOnCircleNorm(geom, ang, w, h);
+    mark.x2 = pt.x;
+    mark.y2 = pt.y;
+    geom.a2 = ang;
+  }
+  setDashMidToArcCenter(mark, geom, w, h);
+}
+
+function peDashHandles(mark, w, h) {
+  const list = [
+    { name: "start", px: mark.x1 * w, py: mark.y1 * h },
+    { name: "end", px: mark.x2 * w, py: mark.y2 * h },
+  ];
+  if (mark.mx != null && mark.my != null) {
+    list.splice(1, 0, { name: "mid", px: mark.mx * w, py: mark.my * h });
+  } else {
+    list.splice(1, 0, { name: "mid", px: ((mark.x1 + mark.x2) / 2) * w, py: ((mark.y1 + mark.y2) / 2) * h });
+  }
+  return list;
+}
+
+function peDrawHandles(ctx, mark, w, h) {
+  const r = Math.max(10, Math.min(w, h) * 0.014);
+  ctx.save();
+  ctx.setLineDash([]);
+  for (const hnd of peDashHandles(mark, w, h)) {
+    ctx.beginPath();
+    ctx.fillStyle = hnd.name === "mid" ? "#ffd60a" : "#ffffff";
+    ctx.strokeStyle = "#111111";
+    ctx.lineWidth = Math.max(2, r * 0.18);
+    ctx.arc(hnd.px, hnd.py, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function peHitHandle(pt, mark, w, h) {
+  const hit = Math.max(28, Math.min(w, h) * 0.035);
+  let best = null;
+  let bestD = hit;
+  for (const hnd of peDashHandles(mark, w, h)) {
+    const d = Math.hypot(pt.x - hnd.px, pt.y - hnd.py);
+    if (d <= bestD) {
+      bestD = d;
+      best = hnd.name;
+    }
+  }
+  return best;
+}
+
+function distToDashMark(mark, pt, w, h) {
+  const geom = dashGeometry(mark, w, h);
+  if (geom) {
+    const ang = Math.atan2(pt.y - geom.cy, pt.x - geom.cx);
+    const tau = Math.PI * 2;
+    const midSpan = (geom.am - geom.a1 + tau) % tau;
+    const ccwSpan = (geom.a2 - geom.a1 + tau) % tau;
+    const onCcw = midSpan <= ccwSpan;
+    const span = onCcw ? ccwSpan : (geom.a1 - geom.a2 + tau) % tau;
+    const fromStart = onCcw ? (ang - geom.a1 + tau) % tau : (geom.a1 - ang + tau) % tau;
+    const onArc = fromStart <= span + 0.04;
+    const radial = Math.abs(Math.hypot(pt.x - geom.cx, pt.y - geom.cy) - geom.r);
+    if (onArc) return radial;
+    return Math.min(
+      Math.hypot(pt.x - mark.x1 * w, pt.y - mark.y1 * h),
+      Math.hypot(pt.x - mark.x2 * w, pt.y - mark.y2 * h)
+    );
+  }
+  const ax = mark.x1 * w, ay = mark.y1 * h, bx = mark.x2 * w, by = mark.y2 * h;
+  const vx = bx - ax, vy = by - ay;
+  const len2 = vx * vx + vy * vy;
+  if (len2 < 1) return Math.hypot(pt.x - ax, pt.y - ay);
+  const t = Math.max(0, Math.min(1, ((pt.x - ax) * vx + (pt.y - ay) * vy) / len2));
+  return Math.hypot(pt.x - (ax + t * vx), pt.y - (ay + t * vy));
+}
+
+function peHitDash(pt, w, h) {
+  const thresh = Math.max(22, Math.min(w, h) * 0.03);
+  let best = -1;
+  let bestD = thresh;
+  for (let i = pe.marks.length - 1; i >= 0; i--) {
+    const m = pe.marks[i];
+    if (m.type !== "dash") continue;
+    const d = distToDashMark(m, pt, w, h);
+    if (d <= bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  return best;
+}
+
+function peSetHint(key) {
+  const el = document.querySelector(".pe-hint");
+  if (el) el.textContent = t(key);
+}
+
+function peSelectDash(index) {
+  pe.selected = index;
+  peSetHint(index >= 0 ? "arcLengthHint" : "markHint");
+}
+
 function paintDash(ctx, mark, w, h, minEdge) {
   applyMarkStroke(ctx, mark, minEdge);
   const dash = Math.max(8, minEdge * 0.02);
@@ -1043,6 +1298,8 @@ const pe = {
   width: 0.009,
   draft: null,
   drawing: false,
+  selected: -1,
+  dragHandle: null,
 };
 
 function peCanvas() {
@@ -1067,6 +1324,9 @@ function peRedraw() {
   ctx.clearRect(0, 0, w, h);
   ctx.drawImage(pe.image, 0, 0, w, h);
   drawMarks(ctx, pe.marks, w, h, pe.draft);
+  if (pe.selected >= 0 && pe.marks[pe.selected] && pe.marks[pe.selected].type === "dash") {
+    peDrawHandles(ctx, pe.marks[pe.selected], w, h);
+  }
 }
 
 function peSetTool(tool) {
@@ -1119,6 +1379,8 @@ async function openPhotoEditor(photoId) {
   pe.workingBlob = rec.blob;
   pe.draft = null;
   pe.drawing = false;
+  pe.selected = -1;
+  pe.dragHandle = null;
   pe.tool = "arrow";
   pe.color = "#e63935";
   pe.width = PE_WIDTHS.medium;
@@ -1138,6 +1400,8 @@ function closePhotoEditor() {
   pe.workingBlob = null;
   pe.draft = null;
   pe.drawing = false;
+  pe.selected = -1;
+  pe.dragHandle = null;
   if (pe.image && typeof pe.image.close === "function") {
     try { pe.image.close(); } catch (e) {}
   }
@@ -1146,12 +1410,46 @@ function closePhotoEditor() {
   document.body.classList.remove("pe-open");
 }
 
+function peEventCanvasPoint(ev) {
+  const canvas = peCanvas();
+  const rect = canvas.getBoundingClientRect();
+  if (!rect.width || !rect.height) return { x: 0, y: 0 };
+  return {
+    x: (ev.clientX - rect.left) * (canvas.width / rect.width),
+    y: (ev.clientY - rect.top) * (canvas.height / rect.height),
+  };
+}
+
 function peOnPointerDown(ev) {
   if (!pe.open || ev.button != null && ev.button !== 0) return;
   ev.preventDefault();
   peCanvas().setPointerCapture(ev.pointerId);
-  pe.drawing = true;
+  const canvas = peCanvas();
+  const w = canvas.width, h = canvas.height;
+  const pt = peEventCanvasPoint(ev);
   const p = peNormFromEvent(ev);
+  if (pe.selected >= 0 && pe.marks[pe.selected] && pe.marks[pe.selected].type === "dash") {
+    const handle = peHitHandle(pt, pe.marks[pe.selected], w, h);
+    if (handle) {
+      pe.dragHandle = handle;
+      pe.drawing = false;
+      pe.draft = null;
+      peRedraw();
+      return;
+    }
+  }
+  const hit = peHitDash(pt, w, h);
+  if (hit >= 0) {
+    peSelectDash(hit);
+    const handle = peHitHandle(pt, pe.marks[hit], w, h);
+    pe.dragHandle = handle;
+    pe.drawing = false;
+    pe.draft = null;
+    peRedraw();
+    return;
+  }
+  peSelectDash(-1);
+  pe.drawing = true;
   const base = { color: pe.color, width: pe.width };
   if (pe.tool === "circle") {
     pe.draft = Object.assign({ type: "circle", cx: p.x, cy: p.y, r: 0 }, base);
@@ -1164,6 +1462,21 @@ function peOnPointerDown(ev) {
 }
 
 function peOnPointerMove(ev) {
+  if (pe.dragHandle && pe.selected >= 0 && pe.marks[pe.selected] && pe.marks[pe.selected].type === "dash") {
+    ev.preventDefault();
+    const canvas = peCanvas();
+    const w = canvas.width, h = canvas.height;
+    const p = peNormFromEvent(ev);
+    const mark = pe.marks[pe.selected];
+    if (pe.dragHandle === "mid") {
+      mark.mx = p.x;
+      mark.my = p.y;
+    } else {
+      adjustDashEnd(mark, pe.dragHandle, p, w, h);
+    }
+    peRedraw();
+    return;
+  }
   if (!pe.drawing || !pe.draft) return;
   ev.preventDefault();
   const p = peNormFromEvent(ev);
@@ -1195,6 +1508,15 @@ function peOnPointerMove(ev) {
   peRedraw();
 }
 
+function peOnPointerUp() {
+  if (pe.dragHandle) {
+    pe.dragHandle = null;
+    peRedraw();
+    return;
+  }
+  peFinishDraft();
+}
+
 function peFinishDraft() {
   if (!pe.drawing) return;
   pe.drawing = false;
@@ -1214,6 +1536,7 @@ function peFinishDraft() {
         mark.my = mid.y;
       }
       pe.marks.push(mark);
+      peSelectDash(pe.marks.length - 1);
     }
   } else {
     const canvas = peCanvas();
@@ -1244,6 +1567,8 @@ async function peCancel() {
 async function peUndo() {
   if (pe.marks.length) pe.marks.pop();
   pe.draft = null;
+  pe.dragHandle = null;
+  peSelectDash(pe.marks.length && pe.marks[pe.marks.length - 1].type === "dash" ? pe.marks.length - 1 : -1);
   peRedraw();
 }
 
@@ -1252,6 +1577,8 @@ async function peClearMarks() {
   if (!confirm(t("clearMarks") + "?")) return;
   pe.marks = [];
   pe.draft = null;
+  pe.dragHandle = null;
+  peSelectDash(-1);
   peRedraw();
 }
 
@@ -1286,8 +1613,8 @@ function wirePhotoEditor() {
   canvas.dataset.wired = "1";
   canvas.addEventListener("pointerdown", peOnPointerDown);
   canvas.addEventListener("pointermove", peOnPointerMove);
-  canvas.addEventListener("pointerup", peFinishDraft);
-  canvas.addEventListener("pointercancel", peFinishDraft);
+  canvas.addEventListener("pointerup", peOnPointerUp);
+  canvas.addEventListener("pointercancel", peOnPointerUp);
   document.querySelectorAll("[data-pe-tool]").forEach((btn) => {
     btn.addEventListener("click", () => peSetTool(btn.getAttribute("data-pe-tool")));
   });
