@@ -71,8 +71,8 @@ const I18N = {
     rotatePhoto: "Rotate 90°",
     saveMarks: "Save",
     cancel: "Cancel",
-    movePrev: "Move earlier",
-    moveNext: "Move later",
+    movePrev: "↑ Move up",
+    moveNext: "↓ Move down",
     stampOn: "Date/time stamp: ON",
     stampOff: "Date/time stamp: OFF",
     back: "Back",
@@ -170,8 +170,8 @@ const I18N = {
     rotatePhoto: "旋轉 90°",
     saveMarks: "儲存",
     cancel: "取消",
-    movePrev: "往前移",
-    moveNext: "往後移",
+    movePrev: "↑ 上移",
+    moveNext: "↓ 下移",
     stampOn: "日期時間戳：開",
     stampOff: "日期時間戳：關",
     back: "返回",
@@ -2386,11 +2386,38 @@ async function saveTreeFields() {
   return tree;
 }
 
-async function moveTreePhoto(pid, delta) {
+function indexOfPhotoId(ids, pid) {
+  const key = String(pid);
+  return (ids || []).findIndex((id) => String(id) === key);
+}
+
+function photoSlotSelector(pid) {
+  return `.photo-slot[data-photo-id="${String(pid)}"]`;
+}
+
+function revokePhotoUrls(root) {
+  if (!root) return;
+  root.querySelectorAll("img").forEach((img) => {
+    if (img.src && img.src.startsWith("blob:")) URL.revokeObjectURL(img.src);
+  });
+}
+
+let treePhotoMoveChain = Promise.resolve();
+let treePhotosRenderGen = 0;
+
+function moveTreePhoto(pid, delta) {
+  const run = treePhotoMoveChain.then(() => moveTreePhotoNow(pid, delta));
+  treePhotoMoveChain = run.catch((err) => {
+    console.error(err);
+  });
+  return run;
+}
+
+async function moveTreePhotoNow(pid, delta) {
   const tree = await getTree(currentTreeId);
   if (!tree || !tree.treePhotoIds) return;
   const ids = tree.treePhotoIds.slice();
-  const i = ids.indexOf(pid);
+  const i = indexOfPhotoId(ids, pid);
   const j = i + delta;
   if (i < 0 || j < 0 || j >= ids.length) return;
   const tmp = ids[i];
@@ -2399,7 +2426,7 @@ async function moveTreePhoto(pid, delta) {
   tree.treePhotoIds = ids;
   tree.updatedAt = Date.now();
   await putTree(tree);
-  await renderTreePhotos(tree);
+  await renderTreePhotos(tree, { focusId: pid });
 }
 
 const PHOTO_CAPTION_OPTIONS = [
@@ -2411,89 +2438,129 @@ const PHOTO_CAPTION_OPTIONS = [
 
 let captionOptionsVisible = false;
 
-async function renderTreePhotos(tree) {
-  const wrap = document.getElementById("treePhotos");
-  wrap.innerHTML = "";
-  tree.treePhotoCaptions = tree.treePhotoCaptions || {};
-  const ids = tree.treePhotoIds || [];
-  for (let i = 0; i < ids.length; i++) {
-    const pid = ids[i];
-    const slot = document.createElement("div");
-    slot.className = "photo-slot";
-    const url = await photoDisplayUrl(tree, pid);
-    const cap = tree.treePhotoCaptions[pid] || "";
-    slot.innerHTML = `
+function buildTreePhotoSlot(tree, pid, i, total) {
+  const slot = document.createElement("div");
+  slot.className = "photo-slot";
+  slot.dataset.photoId = String(pid);
+  const cap = (tree.treePhotoCaptions && tree.treePhotoCaptions[pid]) || "";
+  slot.innerHTML = `
       <div class="photo-tools">
         <span class="order">#${i + 1}</span>
         <button type="button" class="mini" data-act="edit">${t("markPhoto")}</button>
-        <button type="button" class="mini" data-act="prev" ${i === 0 ? "disabled" : ""}>${t("movePrev")}</button>
-        <button type="button" class="mini" data-act="next" ${i === ids.length - 1 ? "disabled" : ""}>${t("moveNext")}</button>
         <button type="button" class="mini danger" data-act="del">${t("delete")}</button>
       </div>
       <div class="photo-frame">
-        <img src="${url}" alt="">
+        <img alt="">
+      </div>
+      <div class="photo-reorder">
+        <button type="button" class="mini" data-act="prev" ${i === 0 ? "disabled" : ""}>${t("movePrev")}</button>
+        <button type="button" class="mini" data-act="next" ${i === total - 1 ? "disabled" : ""}>${t("moveNext")}</button>
       </div>
       <input class="caption-input" type="text" maxlength="120" placeholder="${escapeHtml(t("photoCaption"))}" value="${escapeHtml(cap)}">
       <div class="chip-box" data-cap-chips ${captionOptionsVisible ? "" : "hidden"}></div>`;
-    const img = slot.querySelector("img");
-    const input = slot.querySelector("input");
-    const openEdit = (e) => {
-      e.stopPropagation();
-      openPhotoEditor(pid);
-    };
-    img.addEventListener("click", openEdit);
-    slot.querySelector('[data-act="edit"]').addEventListener("click", openEdit);
-    slot.querySelector('[data-act="del"]').addEventListener("click", async (e) => {
-      e.stopPropagation();
-      if (!confirm(t("delete") + "?")) return;
-      const latest = await getTree(currentTreeId);
-      if (!latest) return;
-      latest.treePhotoIds = (latest.treePhotoIds || []).filter((x) => x !== pid);
-      if (latest.treePhotoCaptions) delete latest.treePhotoCaptions[pid];
-      if (latest.treePhotoMarks) delete latest.treePhotoMarks[pid];
-      await deletePhoto(pid);
-      latest.updatedAt = Date.now();
-      await putTree(latest);
-      await renderTreePhotos(latest);
-    });
-    slot.querySelector('[data-act="prev"]').addEventListener("click", (e) => {
-      e.stopPropagation();
-      moveTreePhoto(pid, -1);
-    });
-    slot.querySelector('[data-act="next"]').addEventListener("click", (e) => {
-      e.stopPropagation();
-      moveTreePhoto(pid, 1);
-    });
-    const saveCap = async () => {
-      const latest = await getTree(currentTreeId);
-      if (!latest) return;
-      latest.treePhotoCaptions = latest.treePhotoCaptions || {};
-      latest.treePhotoCaptions[pid] = input.value.trim();
-      latest.updatedAt = Date.now();
-      await putTree(latest);
-      tree.treePhotoCaptions = latest.treePhotoCaptions;
-    };
-    input.addEventListener("change", saveCap);
-    input.addEventListener("blur", saveCap);
+  const img = slot.querySelector("img");
+  const input = slot.querySelector("input");
+  const openEdit = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openPhotoEditor(pid);
+  };
+  img.addEventListener("click", openEdit);
+  slot.querySelector('[data-act="edit"]').addEventListener("click", openEdit);
+  slot.querySelector('[data-act="del"]').addEventListener("click", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirm(t("delete") + "?")) return;
+    const latest = await getTree(currentTreeId);
+    if (!latest) return;
+    latest.treePhotoIds = (latest.treePhotoIds || []).filter((x) => String(x) !== String(pid));
+    if (latest.treePhotoCaptions) delete latest.treePhotoCaptions[pid];
+    if (latest.treePhotoMarks) delete latest.treePhotoMarks[pid];
+    await deletePhoto(pid);
+    latest.updatedAt = Date.now();
+    await putTree(latest);
+    await renderTreePhotos(latest);
+  });
+  slot.querySelector('[data-act="prev"]').addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    moveTreePhoto(pid, -1);
+  });
+  slot.querySelector('[data-act="next"]').addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    moveTreePhoto(pid, 1);
+  });
+  const saveCap = async () => {
+    const latest = await getTree(currentTreeId);
+    if (!latest) return;
+    latest.treePhotoCaptions = latest.treePhotoCaptions || {};
+    latest.treePhotoCaptions[pid] = input.value.trim();
+    latest.updatedAt = Date.now();
+    await putTree(latest);
+    tree.treePhotoCaptions = latest.treePhotoCaptions;
+  };
+  input.addEventListener("change", saveCap);
+  input.addEventListener("blur", saveCap);
 
-    const capChips = slot.querySelector("[data-cap-chips]");
-    const currentParts = cap.toLowerCase().split(/\s*,\s*|\s+and\s+/).map((p) => p.trim()).filter(Boolean);
-    capChips.innerHTML = PHOTO_CAPTION_OPTIONS.map((opt) => {
-      const sel = currentParts.includes(opt.toLowerCase()) ? " selected" : "";
-      return `<button type="button" class="chip${sel}" data-val="${opt}">${opt}</button>`;
-    }).join("");
-    capChips.querySelectorAll(".chip").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        btn.classList.toggle("selected");
-        const selected = [...capChips.querySelectorAll(".chip.selected")].map((c) => c.getAttribute("data-val"));
-        input.value = joinWithAnd(selected);
-        saveCap();
-      });
+  const capChips = slot.querySelector("[data-cap-chips]");
+  const currentParts = cap.toLowerCase().split(/\s*,\s*|\s+and\s+/).map((p) => p.trim()).filter(Boolean);
+  capChips.innerHTML = PHOTO_CAPTION_OPTIONS.map((opt) => {
+    const sel = currentParts.includes(opt.toLowerCase()) ? " selected" : "";
+    return `<button type="button" class="chip${sel}" data-val="${opt}">${opt}</button>`;
+  }).join("");
+  capChips.querySelectorAll(".chip").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      btn.classList.toggle("selected");
+      const selected = [...capChips.querySelectorAll(".chip.selected")].map((c) => c.getAttribute("data-val"));
+      input.value = joinWithAnd(selected);
+      saveCap();
     });
+  });
+  return slot;
+}
 
-    wrap.appendChild(slot);
+async function fillTreePhotoImages(tree, ids, gen) {
+  const wrap = document.getElementById("treePhotos");
+  if (!wrap) return;
+  for (const pid of ids) {
+    if (gen !== treePhotosRenderGen) return;
+    let url = "";
+    try {
+      url = await photoDisplayUrl(tree, pid);
+    } catch (err) {
+      console.error(err);
+    }
+    if (gen !== treePhotosRenderGen) {
+      if (url) URL.revokeObjectURL(url);
+      return;
+    }
+    const img = wrap.querySelector(photoSlotSelector(pid) + " img");
+    if (img) img.src = url;
+    else if (url) URL.revokeObjectURL(url);
   }
+}
+
+async function renderTreePhotos(tree, opts) {
+  const wrap = document.getElementById("treePhotos");
+  if (!wrap) return;
+  const gen = ++treePhotosRenderGen;
+  revokePhotoUrls(wrap);
+  wrap.innerHTML = "";
+  tree.treePhotoCaptions = tree.treePhotoCaptions || {};
+  const ids = (tree.treePhotoIds || []).slice();
+  const total = ids.length;
+  for (let i = 0; i < total; i++) {
+    wrap.appendChild(buildTreePhotoSlot(tree, ids[i], i, total));
+  }
+  const focusId = opts && opts.focusId;
+  if (focusId) {
+    const slot = wrap.querySelector(photoSlotSelector(focusId));
+    if (slot) slot.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+  fillTreePhotoImages(tree, ids, gen);
 }
 
 function renderDrillList(tree) {
