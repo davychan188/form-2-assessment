@@ -19,7 +19,8 @@ const I18N = {
     comments: "Assessment comments",
     notes: "Notes",
     treePhotos: "Tree photos (at least 1)",
-    addTreePhoto: "Take / add tree photos",
+    takeTreePhoto: "Take photo",
+    addTreePhotos: "Add photos",
     gps: "Capture GPS",
     gpsOff: "No GPS yet",
     saveTree: "Save tree & continue",
@@ -117,7 +118,8 @@ const I18N = {
     inspector: "檢查員",
     notes: "備註",
     treePhotos: "樹木照片（至少 1 張）",
-    addTreePhoto: "拍攝 / 一次過加入樹木照片",
+    takeTreePhoto: "拍攝",
+    addTreePhotos: "加入相片",
     gps: "擷取 GPS",
     gpsOff: "尚未有 GPS",
     saveTree: "儲存並繼續",
@@ -3038,12 +3040,19 @@ async function init() {
     });
   });
 
-  document.getElementById("fileTreePhoto").addEventListener("change", async (e) => {
-    const files = e.target.files ? [...e.target.files] : [];
-    e.target.value = "";
-    if (files.length) await handleTreePhotos(files);
-  });
-  document.getElementById("btnTreePhoto").addEventListener("click", () => document.getElementById("fileTreePhoto").click());
+  function wireTreePhotoInput(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener("change", async (e) => {
+      const files = e.target.files ? [...e.target.files] : [];
+      e.target.value = "";
+      if (files.length) await handleTreePhotos(files);
+    });
+  }
+  wireTreePhotoInput("fileTreePhotoTake");
+  wireTreePhotoInput("fileTreePhotoAdd");
+  document.getElementById("btnTreePhotoTake").addEventListener("click", () => document.getElementById("fileTreePhotoTake").click());
+  document.getElementById("btnTreePhotoAdd").addEventListener("click", () => document.getElementById("fileTreePhotoAdd").click());
   const capToggleBtn = document.getElementById("btnToggleCaptionOptions");
   if (capToggleBtn) {
     capToggleBtn.addEventListener("click", async () => {

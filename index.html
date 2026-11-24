@@ -136,8 +136,12 @@
           <button class="btn secondary" id="btnToggleCaptionOptions" type="button" style="width:auto;min-height:32px;padding:4px 10px;font-size:13px">Show options</button>
         </div>
         <div class="photos" id="treePhotos"></div>
-        <input class="hidden-file" id="fileTreePhoto" type="file" accept="image/*" multiple>
-        <button class="btn ghost" id="btnTreePhoto" type="button" style="margin-top:10px" data-i18n="addTreePhoto">Take / add tree photos</button>
+        <input class="hidden-file" id="fileTreePhotoTake" type="file" accept="image/*" capture="environment">
+        <input class="hidden-file" id="fileTreePhotoAdd" type="file" accept="image/*" multiple>
+        <div class="grid-2" style="margin-top:10px">
+          <button class="btn ghost" id="btnTreePhotoTake" type="button" data-i18n="takeTreePhoto">Take photo</button>
+          <button class="btn ghost" id="btnTreePhotoAdd" type="button" data-i18n="addTreePhotos">Add photos</button>
+        </div>
         <button class="btn secondary" type="button" style="margin-top:8px" data-stamp-toggle>Date/time stamp: OFF</button>
       </div>
 
