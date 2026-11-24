@@ -62,7 +62,7 @@ This repo is published at the URL above. You can also upload the folder to Netli
 
 ## Photos
 
-Location type and Target assessment have Show options lists taken from the official Form 2. The value written into the field (and comments or export) omits parenthetical text, so similar options such as the three People categories stay distinguishable with a short qualifier instead of parentheses.
+Location type and Target assessment have Show options lists taken from the official Form 2. The value written into the field omits parenthetical text, so similar options such as the three People categories stay distinguishable with a short qualifier instead of parentheses. Assessment comments use short names (for example People, buildings, sitting-out areas) instead of the full official option text.
 
 Use **Take photo** to open the camera (one shot at a time) or **Add photos** to pick several pictures from the library. Each caption starts as the file name (without the extension). Tree photos are shown in a portrait (3:4) frame, matching the Word report. Landscape images are fitted into a portrait canvas when imported (content stays upright, with padding). Tap a photo to draw arrows, circles, or dashed lines (straight or curved into an arc). After drawing a mark, drag it to move it. For an arc, drag the end handles to change its length, or the middle handle to change the curve. These marks are included in Word and HTML exports. The date/time stamp is off by default; when turned on it uses the photo's capture time, not the import time.
 

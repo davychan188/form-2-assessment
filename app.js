@@ -1929,6 +1929,25 @@ const TARGET_ASSESSMENT_OPTIONS = [
   { value: "Others", label: "Others 其他" },
 ];
 
+const TARGET_ASSESSMENT_SHORT_NAMES = {
+  "People — residents, students, working staff, etc.": "People",
+  "People — pedestrians, facility users, activity participants, etc.": "People",
+  "People — vehicle drivers, bikers, etc.": "People",
+  "Buildings — residential, commercial, school, utility, covered carparks, etc.": "buildings",
+  "Urban parks/sitting-out area/recreation site": "urban parks",
+  "Countryside/rural/country parks recreational site/parks/sitting-out areas": "sitting-out areas",
+  "Open carparks": "open carparks",
+  "Open space — square, promenade, plaza, etc.": "open space",
+  "Hiking trails/rural footpaths": "hiking trails",
+  "Urban paths, pedestrian walkways, etc.": "urban paths",
+  "Bus stops, tram stops, taxi stops, minibus stops, etc.": "bus stops",
+  "Expressways": "expressways",
+  "Busy public road — 4 lanes or above": "Busy public road",
+  "Moderate public road — 2 lanes": "Moderate public road",
+  "Minor public road/village road — 1 lane": "minor public road",
+  "Others": "others",
+};
+
 function loadHistory(key) {
   try {
     const raw = localStorage.getItem(key);
@@ -2166,12 +2185,131 @@ function recommendationClosing(rec) {
   return `The following is recommended: ${body}`;
 }
 
+function normalizeTargetKey(s) {
+  return stripParenText(s)
+    .replace(/[\u2010-\u2015\u2212–—]/g, "—")
+    .replace(/\s*—\s*/g, " — ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function compactSlashPhrase(s) {
+  const parts = String(s || "")
+    .split("/")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (parts.length < 2) return String(s || "").trim();
+  const compact = [...parts].reverse().find((p) => {
+    const words = p.split(/\s+/).filter(Boolean);
+    return words.length >= 1 && words.length <= 4;
+  });
+  return (compact || parts[parts.length - 1] || parts[0] || s).trim();
+}
+
+function shortTargetName(value) {
+  const raw = stripParenText(value);
+  if (!raw) return "";
+  const key = normalizeTargetKey(raw);
+  for (const [official, short] of Object.entries(TARGET_ASSESSMENT_SHORT_NAMES)) {
+    if (normalizeTargetKey(official) === key) return short;
+  }
+  let s = raw;
+  const dashParts = s.split(/\s+[—–\u2010-\u2015\u2212-]\s+/);
+  if (dashParts.length > 1 && dashParts[0].trim()) s = dashParts[0].trim();
+  if (s.includes("/")) s = compactSlashPhrase(s);
+  return s;
+}
+
+function joinShortTargetNames(items) {
+  const arr = items.map((s) => String(s || "").trim()).filter(Boolean);
+  if (!arr.length) return "";
+  if (arr.length === 1) return arr[0];
+  if (arr.length === 2) return arr[0] + " and " + arr[1];
+  return arr.slice(0, -1).join(", ") + " and " + arr[arr.length - 1];
+}
+
+function officialTargetPattern(official) {
+  const parts = String(official || "").split(/[\u2010-\u2015\u2212–—-]/);
+  const escaped = parts.map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+"));
+  if (escaped.length === 1) return new RegExp(escaped[0], "i");
+  return new RegExp(escaped.join("\\s*[\u2010-\u2015\u2212–—-]\\s*"), "i");
+}
+
+function splitTargetValuesForComments(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return [];
+  const known = TARGET_ASSESSMENT_OPTIONS.map((o) => chipOption(o).value)
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);
+  const taken = [];
+  const used = new Array(raw.length).fill(false);
+  const rangeFree = (start, end) => {
+    for (let i = start; i < end; i++) if (used[i]) return false;
+    return true;
+  };
+  const mark = (start, end) => {
+    for (let i = start; i < end; i++) used[i] = true;
+  };
+  for (const k of known) {
+    const re = new RegExp(officialTargetPattern(k).source, "ig");
+    let m;
+    while ((m = re.exec(raw)) !== null) {
+      const start = m.index;
+      const end = start + m[0].length;
+      if (!rangeFree(start, end)) continue;
+      taken.push({ start, end, value: k });
+      mark(start, end);
+    }
+  }
+  let i = 0;
+  while (i < raw.length) {
+    if (used[i]) {
+      i += 1;
+      continue;
+    }
+    let j = i;
+    while (j < raw.length && !used[j]) j += 1;
+    const chunk = raw.slice(i, j);
+    const custom = chunk
+      .split(/\s*;\s*|\s*,\s*|\s+and\s+/i)
+      .map((s) => s.trim().replace(/^[;,.]+|[;,.]+$/g, "").replace(/^and\s+/i, "").trim())
+      .filter(Boolean)
+      .filter((s) => s.toLowerCase() !== "and");
+    let cursor = i;
+    for (const c of custom) {
+      const idx = raw.toLowerCase().indexOf(c.toLowerCase(), cursor);
+      const start = idx >= i && idx < j ? idx : cursor;
+      taken.push({ start, end: start + c.length, value: c });
+      cursor = start + c.length;
+    }
+    i = j;
+  }
+  taken.sort((a, b) => a.start - b.start);
+  return taken.map((t) => t.value);
+}
+
+function formatTargetsForComments(targets) {
+  const parts = splitTargetValuesForComments(targets);
+  const shorts = [];
+  const seen = new Set();
+  for (const p of parts) {
+    const name = shortTargetName(p);
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    shorts.push(name);
+  }
+  return shorts.length ? joinShortTargetNames(shorts) : "—";
+}
+
 function buildCommentsText(treeId, species, site, nearby, targets, recommendation, locationType) {
   const id = treeId || "—";
   const sp = formatSpeciesForComments(species) || "—";
   const art = articleFor(sp);
   const n = nearby || "—";
-  const t = stripParenText(targets) || "—";
+  const t = formatTargetsForComments(targets);
   return (
     `The inspected tree (${id}) is ${art} ${sp} situated in ${placePhrase(site, locationType)}. The tree is next to ${n}, which is considered frequently used. The targets of the tree cover ${t}.\n\n` +
     `The overall health condition of the tree was normal at the time of inspection, as evidenced by typical color, size, and density of the foliage. Structurally, no significant defects were observed along the main trunk and branches.\n\n` +
