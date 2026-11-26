@@ -887,7 +887,7 @@ async function drawImageToPortraitCanvas(img, maxEdge = 1920, quality = 0.88, st
   canvas.height = canvasH;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("no canvas context");
-  ctx.fillStyle = "#0a140f";
+  ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, canvasW, canvasH);
   const fit = Math.min(canvasW / srcW, canvasH / srcH);
   const dw = Math.max(1, Math.round(srcW * fit));
