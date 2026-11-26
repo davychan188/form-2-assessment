@@ -2445,11 +2445,12 @@ function buildTreePhotoSlot(tree, pid, i, total) {
   const cap = (tree.treePhotoCaptions && tree.treePhotoCaptions[pid]) || "";
   slot.innerHTML = `
       <div class="photo-tools">
-        <span class="order">#${i + 1}</span>
+        <span class="order">${i + 1}</span>
         <button type="button" class="mini" data-act="edit">${t("markPhoto")}</button>
         <button type="button" class="mini danger" data-act="del">${t("delete")}</button>
       </div>
       <div class="photo-frame">
+        <span class="photo-index" aria-hidden="true">${i + 1}</span>
         <img alt="">
       </div>
       <div class="photo-reorder">
@@ -2695,18 +2696,27 @@ async function deleteCurrentDrill() {
   await openTree(currentTreeId);
 }
 
+function fileBaseName(file) {
+  let base = String((file && file.name) || "").trim().replace(/^.*[/\\]/, "");
+  try { base = decodeURIComponent(base); } catch (e) {}
+  return base;
+}
+
 function captionFromFileName(file) {
-  const raw = String((file && file.name) || "").trim();
+  const raw = fileBaseName(file);
   if (!raw) return "";
-  let base = raw.replace(/^.*[/\\]/, "");
+  let base = raw;
   const dot = base.lastIndexOf(".");
   if (dot > 0) base = base.slice(0, dot);
-  try { base = decodeURIComponent(base); } catch (e) {}
   return base.replace(/\s+/g, " ").trim().slice(0, 120);
 }
 
+function sortFilesByNaturalName(files) {
+  return files.sort((a, b) => fileBaseName(a).localeCompare(fileBaseName(b), undefined, { numeric: true, sensitivity: "base" }));
+}
+
 async function handleTreePhotos(files) {
-  const list = [...(files || [])].filter(Boolean);
+  const list = sortFilesByNaturalName([...(files || [])].filter(Boolean));
   if (!list.length) return;
   await saveTreeFields();
   const tree = await getTree(currentTreeId);
