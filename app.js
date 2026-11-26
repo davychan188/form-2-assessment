@@ -2697,9 +2697,21 @@ async function deleteCurrentDrill() {
 }
 
 function fileBaseName(file) {
-  let base = String((file && file.name) || "").trim().replace(/^.*[/\\]/, "");
+  let base = String((file && (file.name || file)) || "").trim().replace(/^.*[/\\]/, "");
   try { base = decodeURIComponent(base); } catch (e) {}
   return base;
+}
+
+function leadingFileNumber(name) {
+  const m = String(name || "").match(/^(\d+)(?:[_\s\-.]|$)/);
+  return m ? Number(m[1]) : null;
+}
+
+function stripLeadingNumberPrefix(name) {
+  const s = String(name || "").replace(/\s+/g, " ").trim();
+  if (!s) return "";
+  if (/^\d+$/.test(s)) return "";
+  return s.replace(/^\d+[_\s\-.]+/, "").replace(/\s+/g, " ").trim();
 }
 
 function captionFromFileName(file) {
@@ -2708,11 +2720,20 @@ function captionFromFileName(file) {
   let base = raw;
   const dot = base.lastIndexOf(".");
   if (dot > 0) base = base.slice(0, dot);
-  return base.replace(/\s+/g, " ").trim().slice(0, 120);
+  return stripLeadingNumberPrefix(base).slice(0, 120);
 }
 
 function sortFilesByNaturalName(files) {
-  return files.sort((a, b) => fileBaseName(a).localeCompare(fileBaseName(b), undefined, { numeric: true, sensitivity: "base" }));
+  return files.sort((a, b) => {
+    const na = fileBaseName(a);
+    const nb = fileBaseName(b);
+    const ia = leadingFileNumber(na);
+    const ib = leadingFileNumber(nb);
+    if (ia != null && ib != null && ia !== ib) return ia - ib;
+    if (ia != null && ib == null) return -1;
+    if (ia == null && ib != null) return 1;
+    return na.localeCompare(nb, undefined, { numeric: true, sensitivity: "base" });
+  });
 }
 
 async function handleTreePhotos(files) {
