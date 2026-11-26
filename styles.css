@@ -1,8 +1,8 @@
 :root {
-  --bg: #e8f5ee;
-  --bg-2: #e8f5ee;
-  --panel: #ffffff;
-  --panel-2: #f3f6f4;
+  --bg: #ADEBB3;
+  --bg-2: #ADEBB3;
+  --panel: #D6F5D9;
+  --panel-2: #8FDB99;
   --line: #2d6a4f;
   --line-soft: #c5d6cc;
   --text: #12261b;
@@ -40,7 +40,7 @@ img { max-width: 100%; display: block; }
   align-items: center;
   gap: 10px;
   padding: calc(12px + env(safe-area-inset-top, 0px)) 14px 12px;
-  background: rgba(232, 245, 238, 0.96);
+  background: rgba(173, 235, 179, 0.96);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--line-soft);
 }
@@ -91,7 +91,7 @@ img { max-width: 100%; display: block; }
 label { display: block; font-size: 0.82rem; color: var(--accent-2); margin-bottom: 6px; font-weight: 600; }
 .field input, .field select, .field textarea {
   width: 100%;
-  background: #ffffff;
+  background: #EAFAEC;
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 12px 12px;
@@ -132,7 +132,7 @@ label { display: block; font-size: 0.82rem; color: var(--accent-2); margin-botto
 .item .title { font-weight: 700; margin-bottom: 4px; }
 .badge {
   display: inline-block;
-  background: #e8f5ee;
+  background: #ADEBB3;
   border: 1px solid var(--line);
   color: var(--accent-2);
   border-radius: 999px;
@@ -257,7 +257,7 @@ label { display: block; font-size: 0.82rem; color: var(--accent-2); margin-botto
   gap: 6px;
   border-radius: 999px;
   padding: 6px 10px;
-  background: #e8f5ee;
+  background: #ADEBB3;
   border: 1px solid var(--line);
   font-size: 0.8rem;
 }
@@ -270,7 +270,7 @@ label { display: block; font-size: 0.82rem; color: var(--accent-2); margin-botto
   gap: 10px;
 }
 .photo-slot {
-  background: #e8f5ee;
+  background: #ADEBB3;
   border: 1px dashed var(--line);
   border-radius: 14px;
   overflow: hidden;
@@ -318,7 +318,7 @@ label { display: block; font-size: 0.82rem; color: var(--accent-2); margin-botto
 }
 .photo-slot .caption-input {
   width: 100%;
-  background: #e8f5ee;
+  background: #ADEBB3;
   border: 0;
   border-top: 1px solid var(--line-soft);
   padding: 8px;
@@ -333,7 +333,7 @@ label { display: block; font-size: 0.82rem; color: var(--accent-2); margin-botto
   flex-wrap: wrap;
   gap: 4px;
   padding: 6px;
-  background: #e8f5ee;
+  background: #ADEBB3;
 }
 .photo-tools .mini.danger {
   border-color: #8a3a28;
@@ -364,7 +364,7 @@ label { display: block; font-size: 0.82rem; color: var(--accent-2); margin-botto
   grid-template-columns: 1fr 1fr;
   gap: 6px;
   padding: 8px 6px;
-  background: #e8f5ee;
+  background: #ADEBB3;
   border-top: 1px solid var(--line-soft);
 }
 .photo-reorder .mini {
@@ -403,7 +403,7 @@ label { display: block; font-size: 0.82rem; color: var(--accent-2); margin-botto
   max-height: min(70vh, 420px);
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  background: #ffffff;
+  background: #EAFAEC;
   border: 1px solid var(--line);
   border-radius: 12px;
   z-index: 200;
@@ -427,7 +427,7 @@ label { display: block; font-size: 0.82rem; color: var(--accent-2); margin-botto
 }
 .suggest-item:last-child { border-bottom: 0; }
 .suggest-item:active,
-.suggest-item:hover { background: #e8f5ee; }
+.suggest-item:hover { background: #ADEBB3; }
 .suggest .chi { font-weight: 700; font-size: 0.95rem; }
 .suggest .sci { color: var(--muted); font-size: 0.8rem; font-style: italic; }
 .suggest-empty {
@@ -519,7 +519,7 @@ footer.hint {
   z-index: 80;
   display: flex;
   flex-direction: column;
-  background: #e8f5ee;
+  background: #ADEBB3;
   padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
 }
 .photo-editor[hidden] { display: none; }
@@ -529,7 +529,7 @@ footer.hint {
   gap: 8px;
   align-items: center;
   padding: 10px 12px;
-  background: #e8f5ee;
+  background: #ADEBB3;
   border-color: var(--line-soft);
 }
 .pe-toolbar { border-bottom: 1px solid var(--line-soft); }
@@ -563,7 +563,7 @@ footer.hint {
   gap: 8px;
   align-items: center;
   padding: 8px 12px 4px;
-  background: #e8f5ee;
+  background: #ADEBB3;
 }
 .pe-tools .tool, .pe-footer .btn, .pe-toolbar .btn {
   min-height: 44px;
